@@ -15,54 +15,59 @@ using YamlDotNet.Serialization.NodeDeserializers;
 
 namespace owl_shop
 {
-	class Program
-	{
-		static OwlJsonSerializer _json = new OwlJsonSerializer();
-		static StringSerializer _string = new StringSerializer();
+    class Program
+    {
+        static OwlJsonSerializer _json = new OwlJsonSerializer();
+        static StringSerializer _string = new StringSerializer();
 
-		static async Task Main()
-		{
-			var yamlConfig = File.ReadAllText("");
-			var deserializer = new DeserializerBuilder()
-				.WithNamingConvention(UnderscoredNamingConvention.Instance)
-				.WithNodeDeserializer(inner => new ValidatingNodeDeserializer(inner), s => s.InsteadOf<ObjectNodeDeserializer>())
-				.Build();
-			var options = deserializer.Deserialize<Options>(yamlConfig);
+        static string rootFolder = "../../../";
+        static string configFile = rootFolder + "config.yaml";
+        static string certFile = rootFolder + "plat-sandbox.crt";
 
-			await Test(options);
-			Console.WriteLine("");
-		}
+        static async Task Main() {
 
-		static async Task Test(Options options)
-		{
-			var spammer = new KafkaSpammer(
-				new ProducerConfig {
-					BootstrapServers = options.kafka.BootstrapServers,
-					SaslMechanism = SaslMechanism.Plain,
-					SaslUsername = options.kafka.Sasl.Username,
-					SaslPassword = options.kafka.Sasl.Password,
-					SecurityProtocol = SecurityProtocol.SaslSsl,
-					ClientId = "OwlShop",
-					SslCaLocation = "",
-					Debug = "security"
-				},
-				_string, _json
-			);
+            var yamlConfig = File.ReadAllText(configFile);
+            var deserializer = new DeserializerBuilder()
+                .WithNamingConvention(UnderscoredNamingConvention.Instance)
+                .WithNodeDeserializer(inner => new ValidatingNodeDeserializer(inner), s => s.InsteadOf<ObjectNodeDeserializer>())
+                .Build();
+            var options = deserializer.Deserialize<Options>(yamlConfig);
+
+            await Test(options);
+            Console.WriteLine("");
+        }
+
+        static async Task Test(Options options) {
+
+            var caDir = Path.GetDirectoryName(Path.GetFullPath(certFile));
+            var spammer = new KafkaSpammer(
+                new ProducerConfig {
+                    BootstrapServers = options.kafka.BootstrapServers,
+                    SaslMechanism = SaslMechanism.Plain,
+                    SaslUsername = options.kafka.Sasl.Username,
+                    SaslPassword = options.kafka.Sasl.Password,
+                    SecurityProtocol = SecurityProtocol.SaslSsl,
+                    ClientId = "OwlShop",
+                    SslCaLocation = caDir,
+                    EnableSslCertificateVerification = false,
+                    Debug = "security"
+                },
+                _string, _json
+            );
 
 
-			for (int i = 0; i < 100; i++) {
-				var r = await spammer.Produce<Order>(
-					"orders-json",
-					o => o.ID,
-					o => new (string, object)[]
-						{
-						("producer_service", "owl-shop-v1"),
-						("encoding", "json"),
-						("documentation", "none"),
-						}
-					);
-				Console.WriteLine($"produced to '{r.Topic}' to partition {r.Partition.Value} with offset {r.Offset.Value}");
-			}
-		}
-	}
+            for (int i = 0; i < 100; i++) {
+                var r = await spammer.Produce<Order>(
+                    "orders-json",
+                    o => o.ID,
+                    o => new (string, object)[] {
+                        ("producer_service", "owl-shop-v1"),
+                        ("encoding", "json"),
+                        ("documentation", "none"),
+                        }
+                    );
+                Console.WriteLine($"produced to '{r.Topic}' to partition {r.Partition.Value} with offset {r.Offset.Value}");
+            }
+        }
+    }
 }
