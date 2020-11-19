@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <TargetFramework>net5.0</TargetFramework>
     <RootNamespace>owl_shop</RootNamespace>
     <StartupObject></StartupObject>
 	<Nullable>enable</Nullable>
@@ -19,6 +19,7 @@
     <PackageReference Include="Confluent.SchemaRegistry.Serdes.Avro" Version="1.5.0" />
     <PackageReference Include="Confluent.SchemaRegistry.Serdes.Json" Version="1.5.0" />
     <PackageReference Include="Confluent.SchemaRegistry.Serdes.Protobuf" Version="1.5.0" />
+    <PackageReference Include="YamlDotNet" Version="8.1.2" />
   </ItemGroup>
 
 </Project>
