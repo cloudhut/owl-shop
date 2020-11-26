@@ -14,5 +14,5 @@ type TLSConfig struct {
 
 // RegisterFlags for all sensitive Kafka TLS configs
 func (c *TLSConfig) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&c.Passphrase, "kafka.tls.passphrase", "", "Passphrase to optionally decrypt the private key")
+	f.StringVar(&c.Passphrase, "`shop.kafka.tls.passphrase", "", "Passphrase to optionally decrypt the private key")
 }

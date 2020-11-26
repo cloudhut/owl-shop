@@ -16,7 +16,6 @@ const (
 // SASLConfig for Kafka client
 type SASLConfig struct {
 	Enabled      bool             `yaml:"enabled"`
-	UseHandshake bool             `yaml:"useHandshake"`
 	Username     string           `yaml:"username"`
 	Password     string           `yaml:"password"`
 	Mechanism    string           `yaml:"mechanism"`
@@ -25,13 +24,12 @@ type SASLConfig struct {
 
 // RegisterFlags for all sensitive Kafka SASL configs.
 func (c *SASLConfig) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&c.Password, "kafka.sasl.password", "", "SASL password")
+	f.StringVar(&c.Password, "shop.kafka.sasl.password", "", "SASL password")
 	c.GSSAPIConfig.RegisterFlags(f)
 }
 
 // SetDefaults for SASL Config
 func (c *SASLConfig) SetDefaults() {
-	c.UseHandshake = true
 	c.Mechanism = SASLMechanismPlain
 }
 

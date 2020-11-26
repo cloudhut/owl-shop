@@ -17,5 +17,5 @@ type SASLGSSAPIConfig struct {
 
 // RegisterFlags registers all sensitive Kerberos settings as flag
 func (c *SASLGSSAPIConfig) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&c.Password, "kafka.sasl.gssapi.password", "", "Kerberos password if auth type user auth is used")
+	f.StringVar(&c.Password, "shop.kafka.sasl.gssapi.password", "", "Kerberos password if auth type user auth is used")
 }
