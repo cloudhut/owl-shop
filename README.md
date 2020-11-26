@@ -22,7 +22,7 @@ via a consumer group.
 
 ## Getting started
 
-You can configure Owl Shop via arguments and and a YAML config. The main configuration should take place via the YAML
+You can configure Owl Shop via arguments and a YAML config. The main configuration should take place via the YAML
 config. Via arguments you must specify the filepath to your YAML config and you can configure sensitive input via arguments
 instead of putting them into the YAML file.
 
