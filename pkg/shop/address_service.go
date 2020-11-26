@@ -89,7 +89,9 @@ func (svc *AddressService) Initialize(ctx context.Context) error {
 }
 
 func (svc *AddressService) Start() {
-	svc.consumerClient.AssignGroup(svc.clientID, kgo.GroupTopics(svc.cfg.GlobalPrefix+"customers"))
+	svc.consumerClient.AssignGroup(svc.clientID,
+		kgo.GroupTopics(svc.cfg.GlobalPrefix+"customers"),
+		kgo.AutoCommitInterval(500*time.Millisecond))
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		fetches := svc.consumerClient.PollFetches(ctx)
