@@ -25,6 +25,6 @@ jobs:
         uses: docker/build-push-action@v2
         with:
           push: true
-          tags:
+          tags: |
             - quay.io/cloudhut/owl-shop:master-$(echo ${GITHUB_SHA} | cut -c1-8)
             - quay.io/cloudhut/owl-shop:latest
