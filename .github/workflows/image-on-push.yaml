@@ -15,13 +15,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
 
-      - name: Login to DockerHub
-        uses: docker/login-action@v1
-        with:
-          registry: quay.io
-          username: weeco+cicd
-          password: ${{ secrets.QUAY_TOKEN }}
-
       - name: Docker meta
         id: docker_meta
         uses: crazy-max/ghaction-docker-meta@v1
@@ -29,6 +22,13 @@ jobs:
           images: quay.io/cloudhut/owl-shop
           tag-sha: true # add git short SHA as Docker tag
           tag-match-latest: true
+
+    - name: Login to DockerHub
+      uses: docker/login-action@v1
+      with:
+        registry: quay.io
+        username: weeco+cicd
+        password: ${{ secrets.QUAY_TOKEN }}
 
       - name: Build and push
         uses: docker/build-push-action@v2
