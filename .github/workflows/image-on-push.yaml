@@ -22,10 +22,17 @@ jobs:
           username: weeco+cicd
           password: ${{ secrets.QUAY_TOKEN }}
 
+      - name: Docker meta
+        id: docker_meta
+        uses: crazy-max/ghaction-docker-meta@v1
+        with:
+          images: quay.io/cloudhut/owl-shop
+          tag-sha: true # add git short SHA as Docker tag
+          tag-match-latest: true
+
       - name: Build and push
         uses: docker/build-push-action@v2
         with:
           push: true
-          tags: |
-            - quay.io/cloudhut/owl-shop:master-$(echo ${GITHUB_SHA} | cut -c1-8)
-            - quay.io/cloudhut/owl-shop:latest
+          tagSha: true
+          tags: ${{ steps.docker_meta.outputs.tags }}
