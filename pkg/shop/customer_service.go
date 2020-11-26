@@ -227,6 +227,7 @@ func (svc *CustomerService) createKafkaTopic(ctx context.Context) error {
 				},
 			},
 		},
+		TimeoutMillis: 60 * 1000,
 	}
 	res, err := req.RequestWith(ctx, svc.kafkaSvc.KafkaClient)
 	if err != nil {

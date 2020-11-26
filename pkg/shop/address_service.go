@@ -203,6 +203,7 @@ func (svc *AddressService) createKafkaTopic(ctx context.Context) error {
 				},
 			},
 		},
+		TimeoutMillis: 15 * 1000,
 	}
 	res, err := req.RequestWith(ctx, svc.kafkaSvc.KafkaClient)
 	if err != nil {
