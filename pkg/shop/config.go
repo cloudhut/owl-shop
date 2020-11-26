@@ -16,6 +16,7 @@ type Config struct {
 
 func (c *Config) SetDefaults() {
 	c.Kafka.SetDefaults()
+	c.GlobalPrefix = "owlshop-"
 }
 
 func (c *Config) Validate() error {

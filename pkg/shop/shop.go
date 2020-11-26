@@ -31,7 +31,12 @@ func New(cfg Config, logger *zap.Logger) (*Shop, error) {
 
 	frontendSvc, err := NewFrontendService(cfg, logger)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create address service: %w", err)
+		return nil, fmt.Errorf("failed to create frontend service: %w", err)
+	}
+
+	orderSvc, err := NewOrderService(cfg, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create order service: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -52,7 +57,13 @@ func New(cfg Config, logger *zap.Logger) (*Shop, error) {
 		return nil, fmt.Errorf("failed to initialize frontend service: %w", err)
 	}
 
+	err = orderSvc.Initialize(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize order service: %w", err)
+	}
+
 	go addressSvc.Start()
+	go orderSvc.Start()
 
 	// Random chooser
 	wr, err := weightedrand.NewChooser(
@@ -61,6 +72,7 @@ func New(cfg Config, logger *zap.Logger) (*Shop, error) {
 		weightedrand.Choice{Item: addressSvc.CreateAddress, Weight: 30},
 		weightedrand.Choice{Item: customerSvc.DeleteCustomer, Weight: 8},
 		weightedrand.Choice{Item: customerSvc.ModifyCustomer, Weight: 6},
+		weightedrand.Choice{Item: orderSvc.CreateOrder, Weight: 5},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create random chooser: %w", err)
