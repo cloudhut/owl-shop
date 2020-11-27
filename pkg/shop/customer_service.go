@@ -93,6 +93,7 @@ func (svc *CustomerService) CreateCustomer() {
 		svc.logger.Warn("failed to produce customer", zap.Error(err))
 		return
 	}
+	kafkaMessagesProducedTotal.With(map[string]string{"event_type": EventTypeCustomerCreated}).Inc()
 	return
 }
 
@@ -112,6 +113,7 @@ func (svc *CustomerService) ModifyCustomer() {
 		svc.logger.Warn("failed to produce customer", zap.Error(err))
 		return
 	}
+	kafkaMessagesProducedTotal.With(map[string]string{"event_type": EventTypeCustomerModified}).Inc()
 	return
 }
 
@@ -129,6 +131,7 @@ func (svc *CustomerService) DeleteCustomer() {
 		svc.logger.Warn("failed to produce customer tombstone", zap.Error(err))
 		return
 	}
+	kafkaMessagesProducedTotal.With(map[string]string{"event_type": EventTypeCustomerDeleted}).Inc()
 }
 
 func (svc *CustomerService) popCustomerFromBuffer() (fake.Customer, error) {

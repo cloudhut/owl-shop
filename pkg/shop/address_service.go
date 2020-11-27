@@ -104,6 +104,7 @@ func (svc *AddressService) Start() {
 		iter := fetches.RecordIter()
 		for !iter.Done() {
 			rec := iter.Next()
+			kafkaMessagesConsumedTotal.With(map[string]string{"event_type": EventTypeCustomerConsumed}).Inc()
 
 			if rec.Value == nil {
 				continue
@@ -136,6 +137,7 @@ func (svc *AddressService) CreateAddress() {
 		svc.logger.Warn("failed to produce address", zap.Error(err))
 		return
 	}
+	kafkaMessagesProducedTotal.With(map[string]string{"event_type": EventTypeAddressCreated}).Inc()
 }
 
 func (svc *AddressService) produceAddress(address fake.Address) error {

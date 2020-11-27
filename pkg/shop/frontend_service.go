@@ -75,6 +75,7 @@ func (svc *FrontendService) CreateFrontendEvent() {
 		svc.logger.Warn("failed to produce address", zap.Error(err))
 		return
 	}
+	kafkaMessagesProducedTotal.With(map[string]string{"event_type": EventTypeFrontendEventCreated}).Inc()
 }
 
 func (svc *FrontendService) produceFrontendEvent(event fake.FrontendEvent) error {
@@ -109,8 +110,8 @@ func (svc *FrontendService) produceFrontendEvent(event fake.FrontendEvent) error
 	if err != nil {
 		return fmt.Errorf("failed to produce: %w", err)
 	}
-
 	wg.Wait()
+
 	return nil
 }
 

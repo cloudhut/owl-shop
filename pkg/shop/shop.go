@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"github.com/mroth/weightedrand"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
+	"net/http"
 	"time"
 )
 
@@ -91,8 +93,15 @@ func New(cfg Config, logger *zap.Logger) (*Shop, error) {
 // Start starts all shop components and triggers events (e.g. customer registration) in accordance with the
 // config for traffic simulation.
 func (s *Shop) Start() error {
+	http.Handle("/metrics", promhttp.Handler())
+	go func() {
+		err := http.ListenAndServe(":8080", nil)
+		s.logger.Info("prometheus http handler quit", zap.Error(err))
+	}()
+
 	for {
 		for i := 0; i < s.cfg.Traffic.Interval.Rate; i++ {
+			pageImpressionsSimulated.Inc()
 			s.SimulatePageImpression()
 		}
 		time.Sleep(s.cfg.Traffic.Interval.Duration)

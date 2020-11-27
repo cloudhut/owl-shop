@@ -77,6 +77,7 @@ func (svc *OrderService) Start() {
 		iter := fetches.RecordIter()
 		for !iter.Done() {
 			rec := iter.Next()
+			kafkaMessagesConsumedTotal.With(map[string]string{"event_type": EventTypeCustomerConsumed}).Inc()
 
 			if rec.Value == nil {
 				continue
@@ -138,6 +139,7 @@ func (svc *OrderService) CreateOrder() {
 		svc.logger.Warn("failed to produce customer", zap.Error(err))
 		return
 	}
+	kafkaMessagesProducedTotal.With(map[string]string{"event_type": EventTypeOrderCreated}).Inc()
 	return
 }
 
