@@ -160,10 +160,7 @@ func (svc *OrderService) produceOrder(order fake.Order) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 
-	var wg sync.WaitGroup
-	wg.Add(1)
 	err = svc.kafkaSvc.KafkaClient.Produce(ctx, &rec, func(rec *kgo.Record, err error) {
-		defer wg.Done()
 		if err != nil {
 			svc.logger.Error("failed to produce record",
 				zap.String("topic_name", rec.Topic),
@@ -176,7 +173,6 @@ func (svc *OrderService) produceOrder(order fake.Order) error {
 		return fmt.Errorf("failed to produce: %w", err)
 	}
 
-	wg.Wait()
 	return nil
 }
 

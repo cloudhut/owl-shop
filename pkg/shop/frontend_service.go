@@ -9,7 +9,6 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/zap"
-	"sync"
 	"time"
 )
 
@@ -92,13 +91,10 @@ func (svc *FrontendService) produceFrontendEvent(event fake.FrontendEvent) error
 		Topic:     svc.topicName,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
 	defer cancel()
 
-	var wg sync.WaitGroup
-	wg.Add(1)
 	err = svc.kafkaSvc.KafkaClient.Produce(ctx, &rec, func(rec *kgo.Record, err error) {
-		defer wg.Done()
 		if err != nil {
 			svc.logger.Error("failed to produce record",
 				zap.String("topic_name", rec.Topic),
@@ -110,7 +106,6 @@ func (svc *FrontendService) produceFrontendEvent(event fake.FrontendEvent) error
 	if err != nil {
 		return fmt.Errorf("failed to produce: %w", err)
 	}
-	wg.Wait()
 
 	return nil
 }

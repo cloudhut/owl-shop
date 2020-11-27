@@ -159,10 +159,7 @@ func (svc *CustomerService) produceTombstone(customerID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 
-	var wg sync.WaitGroup
-	wg.Add(1)
 	err := svc.kafkaSvc.KafkaClient.Produce(ctx, &rec, func(rec *kgo.Record, err error) {
-		defer wg.Done()
 		if err != nil {
 			svc.logger.Error("failed to produce tombstone record",
 				zap.String("topic_name", rec.Topic),
@@ -175,7 +172,6 @@ func (svc *CustomerService) produceTombstone(customerID string) error {
 		return fmt.Errorf("failed to produce tombstone: %w", err)
 	}
 
-	wg.Wait()
 	return nil
 }
 
@@ -196,10 +192,7 @@ func (svc *CustomerService) produceCustomer(customer fake.Customer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 
-	var wg sync.WaitGroup
-	wg.Add(1)
 	err = svc.kafkaSvc.KafkaClient.Produce(ctx, &rec, func(rec *kgo.Record, err error) {
-		defer wg.Done()
 		if err != nil {
 			svc.logger.Error("failed to produce record",
 				zap.String("topic_name", rec.Topic),
@@ -212,7 +205,6 @@ func (svc *CustomerService) produceCustomer(customer fake.Customer) error {
 		return fmt.Errorf("failed to produce: %w", err)
 	}
 
-	wg.Wait()
 	return nil
 }
 
