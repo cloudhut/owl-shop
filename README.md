@@ -6,7 +6,8 @@
 [![Docker Repository on Quay](https://img.shields.io/badge/docker%20image-ready-green "Docker Repository on Quay")](https://quay.io/repository/cloudhut/owl-shop?tab=tags)
 
 Owl Shop is an imaginary ecommerce shop that simulates microservices exchanging data via Apache Kafka.
-You can use this tool to load test Kafka clusters or fill it with demo data.
+You can use this tool to load test Kafka clusters or fill it with demo data. Because this tool is supposed 
+to mimic a real-world like scenario this is obviously not as resource efficient as simple stress testers,
 
 ## What does it do?
 
@@ -20,6 +21,9 @@ via a consumer group.
 - ${globalPrefix}customers
 - ${globalPrefix}frontend-events
 - ${globalPrefix}orders
+
+Note: Owl-Shop tries to create above topics with an appropriate config. If your Kafka cluster does not allow auto topic
+creation, you are in charge of creating these beforehand. All topics except frontend-events expect a `compact` cleanup policy.
 
 **Consumed topics:**
 
