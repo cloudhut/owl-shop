@@ -1,4 +1,4 @@
-name: Docker Image for master branch
+name: Docker Image on release
 
 on: release
 
