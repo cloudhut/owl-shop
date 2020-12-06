@@ -11,7 +11,7 @@ COPY ./go.sum .
 RUN go mod download
 
 COPY . .
-RUN go build -o ./bin/owlshop ./cmd
+RUN CGO_ENABLED=0 go build -o ./bin/owlshop ./cmd
 
 ############################################################
 # Final Image
