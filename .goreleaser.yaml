@@ -4,6 +4,6 @@ release:
 changelog:
   skip: false
 
-build:
+builds:
   env:
     - CGO_ENABLED=0
