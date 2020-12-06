@@ -3,3 +3,7 @@ release:
 
 changelog:
   skip: false
+
+build:
+  env:
+    - CGO_ENABLED=0
