@@ -1,9 +1,9 @@
 release:
-  name_template: {{.Tag}}
+  name_template: "{{.Tag}}"
 
 changelog:
   skip: false
 
 builds:
-  env:
-    - CGO_ENABLED=0
+  - env:
+      - CGO_ENABLED=0
