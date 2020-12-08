@@ -10,8 +10,9 @@ type Config struct {
 	Brokers  []string `yaml:"brokers"`
 	ClientID string   `yaml:"clientId"`
 
-	TLS  TLSConfig  `yaml:"tls"`
-	SASL SASLConfig `yaml:"sasl"`
+	TLS                    TLSConfig  `yaml:"tls"`
+	SASL                   SASLConfig `yaml:"sasl"`
+	TopicReplicationFactor int16      `yaml:"topicReplicationFactor"`
 }
 
 // RegisterFlags for all sensitive Kafka SASL configs.
@@ -36,6 +37,7 @@ func (c *Config) Validate() error {
 // SetDefaults for Kafka config
 func (c *Config) SetDefaults() {
 	c.ClientID = "owl-shop"
+	c.TopicReplicationFactor = 3
 
 	c.SASL.SetDefaults()
 }

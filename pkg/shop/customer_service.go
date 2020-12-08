@@ -216,7 +216,7 @@ func (svc *CustomerService) createKafkaTopic(ctx context.Context) error {
 			{
 				Topic:             svc.topicName,
 				NumPartitions:     6,
-				ReplicationFactor: 3,
+				ReplicationFactor: svc.cfg.Kafka.TopicReplicationFactor,
 				Configs: []kmsg.CreateTopicsRequestTopicConfig{
 					{"cleanup.policy", &cleanupPolicy},
 				},
