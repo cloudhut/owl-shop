@@ -2,7 +2,9 @@ package fake
 
 import (
 	"github.com/brianvoe/gofakeit/v5"
+	"github.com/cloudhut/owl-shop/pkg/protobuf"
 	"github.com/mroth/weightedrand"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"math/rand"
 	"strconv"
 	"time"
@@ -68,9 +70,37 @@ type Address struct {
 	Revision              int         `json:"revision"` // Each change on the customer increments the revision
 }
 
+func (a *Address) Protobuf() *protobuf.Address {
+	return &protobuf.Address{
+		Version:               int32(a.Version),
+		Id:                    a.ID,
+		Customer:              a.Customer.Protobuf(),
+		Type:                  string(a.Type),
+		FirstName:             a.FirstName,
+		LastName:              a.LastName,
+		State:                 a.State,
+		HouseNumber:           a.HouseNumber,
+		City:                  a.City,
+		Zip:                   a.Zip,
+		Latitude:              float32(a.Latitude),
+		Longitude:             float32(a.Longitude),
+		Phone:                 a.Phone,
+		AdditionalAddressInfo: a.AdditionalAddressInfo,
+		CreatedAt:             timestamppb.New(a.CreatedAt),
+		Revision:              int32(a.Revision),
+	}
+}
+
 type AddressCustomer struct {
 	CustomerID   string       `json:"id"`
 	CustomerType CustomerType `json:"type"`
+}
+
+func (a *AddressCustomer) Protobuf() *protobuf.Address_Customer {
+	return &protobuf.Address_Customer{
+		CustomerId:   a.CustomerID,
+		CustomerType: string(a.CustomerType),
+	}
 }
 
 // newAddressType returns an address type based on a weighted random choice

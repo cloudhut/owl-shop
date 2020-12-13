@@ -2,6 +2,7 @@ package fake
 
 import (
 	"github.com/brianvoe/gofakeit/v5"
+	"github.com/cloudhut/owl-shop/pkg/protobuf"
 	"github.com/mroth/weightedrand"
 )
 
@@ -24,6 +25,30 @@ type Customer struct {
 	Email        string       `json:"email"`
 	CustomerType CustomerType `json:"customerType"` // PERSONAL | BUSINESS
 	Revision     int          `json:"revision"`     // Each change on the customer increments the revision
+}
+
+func (c *Customer) Protobuf() *protobuf.Customer {
+	companyName := ""
+	if c.CompanyName != nil {
+		companyName = *c.CompanyName
+	}
+
+	customerType := protobuf.Customer_PERSONAL
+	if c.CustomerType == CustomerTypeBusiness {
+		customerType = protobuf.Customer_BUSINESS
+	}
+
+	return &protobuf.Customer{
+		Version:      int32(c.Version),
+		Id:           c.ID,
+		FirstName:    c.FirstName,
+		LastName:     c.LastName,
+		Gender:       c.Gender,
+		CompanyName:  companyName,
+		Email:        c.Email,
+		CustomerType: customerType,
+		Revision:     int32(c.Revision),
+	}
 }
 
 func NewCustomer() Customer {

@@ -10,6 +10,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
 	"sync"
 	"time"
 )
@@ -24,8 +25,9 @@ type OrderService struct {
 	recentCustomersMu sync.RWMutex
 	recentCustomers   []fake.Customer
 
-	clientID  string
-	topicName string
+	clientID          string
+	topicName         string
+	topicNameProtobuf string
 }
 
 func NewOrderService(cfg Config, logger *zap.Logger) (*OrderService, error) {
@@ -55,8 +57,9 @@ func NewOrderService(cfg Config, logger *zap.Logger) (*OrderService, error) {
 		recentCustomersMu: sync.RWMutex{},
 		recentCustomers:   recentCustomers,
 
-		clientID:  clientID,
-		topicName: cfg.GlobalPrefix + "orders",
+		clientID:          clientID,
+		topicName:         cfg.GlobalPrefix + "orders",
+		topicNameProtobuf: cfg.GlobalPrefix + "orders" + "-protobuf",
 	}, nil
 }
 
@@ -107,7 +110,7 @@ func (svc *OrderService) Initialize(ctx context.Context) error {
 		return fmt.Errorf("failed to get metadata to test kafka connectivity: %w", err)
 	}
 
-	// 2. Ensure that Kafka topic exists
+	// 2. Ensure that the Kafka topic exists
 	isTopicExistent := false
 	for _, topic := range metadata.Topics {
 		if topic.Topic == svc.topicName {
@@ -134,16 +137,21 @@ func (svc *OrderService) CreateOrder() {
 	}
 	order := fake.NewOrder(customer)
 
-	err = svc.produceOrder(order)
+	err = svc.produceOrderJSON(order)
 	if err != nil {
-		svc.logger.Warn("failed to produce customer", zap.Error(err))
+		svc.logger.Warn("failed to produce order (json)", zap.Error(err))
 		return
 	}
-	kafkaMessagesProducedTotal.With(map[string]string{"event_type": EventTypeOrderCreated}).Inc()
+	err = svc.produceOrderProtobuf(order)
+	if err != nil {
+		svc.logger.Warn("failed to produce order (protobuf)", zap.Error(err))
+		return
+	}
+	kafkaMessagesProducedTotal.With(map[string]string{"event_type": EventTypeOrderCreated}).Add(2)
 	return
 }
 
-func (svc *OrderService) produceOrder(order fake.Order) error {
+func (svc *OrderService) produceOrderJSON(order fake.Order) error {
 	serialized, err := kafka.SerializeJson(order)
 	if err != nil {
 		return fmt.Errorf("failed to serialize customer struct: %w", err)
@@ -155,6 +163,43 @@ func (svc *OrderService) produceOrder(order fake.Order) error {
 		Headers:   []kgo.RecordHeader{{Key: "revision", Value: []byte("0")}},
 		Timestamp: time.Now(),
 		Topic:     svc.topicName,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+
+	err = svc.kafkaSvc.KafkaClient.Produce(ctx, &rec, func(rec *kgo.Record, err error) {
+		if err != nil {
+			svc.logger.Error("failed to produce record",
+				zap.String("topic_name", rec.Topic),
+				zap.Error(err),
+			)
+			return
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("failed to produce: %w", err)
+	}
+
+	return nil
+}
+
+func (svc *OrderService) produceOrderProtobuf(order fake.Order) error {
+	pbOrder := order.Protobuf()
+	serialized, err := proto.Marshal(pbOrder)
+	if err != nil {
+		return fmt.Errorf("failed to serialize customer struct: %w", err)
+	}
+
+	rec := kgo.Record{
+		Key:   []byte(order.ID),
+		Value: serialized,
+		Headers: []kgo.RecordHeader{
+			{Key: "revision", Value: []byte("0")},
+			{Key: "proto_message_type", Value: []byte("Order")},
+		},
+		Timestamp: time.Now(),
+		Topic:     svc.topicNameProtobuf,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
@@ -194,8 +239,19 @@ func (svc *OrderService) createKafkaTopic(ctx context.Context) error {
 	cleanupPolicy := "compact"
 	req := kmsg.CreateTopicsRequest{
 		Topics: []kmsg.CreateTopicsRequestTopic{
+			// Normal Topic for JSON
 			{
 				Topic:             svc.topicName,
+				NumPartitions:     6,
+				ReplicationFactor: svc.cfg.Kafka.TopicReplicationFactor,
+				Configs: []kmsg.CreateTopicsRequestTopicConfig{
+					{"cleanup.policy", &cleanupPolicy},
+				},
+			},
+
+			// Protobuf serialized orders go into a separate topic
+			{
+				Topic:             svc.topicNameProtobuf,
 				NumPartitions:     6,
 				ReplicationFactor: svc.cfg.Kafka.TopicReplicationFactor,
 				Configs: []kmsg.CreateTopicsRequestTopicConfig{
