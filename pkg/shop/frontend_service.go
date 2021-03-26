@@ -113,8 +113,8 @@ func (svc *FrontendService) produceFrontendEvent(event fake.FrontendEvent) error
 // createKafkaTopic tries to create the Kafka topic
 func (svc *FrontendService) createKafkaTopic(ctx context.Context) error {
 	cleanupPolicy := "delete"
-	retentionBytes := "1000000000" // 1GB
-	segmentBytes := "1000000"      // 100MB
+	retentionBytes := "3000000000" // 3GB
+	segmentBytes := "300000000"    // 300MB
 	req := kmsg.CreateTopicsRequest{
 		Topics: []kmsg.CreateTopicsRequestTopic{
 			{
