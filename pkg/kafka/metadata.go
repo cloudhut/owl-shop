@@ -18,7 +18,7 @@ func (s *Service) GetTopicMetadata(ctx context.Context, topicName string) (*kmsg
 	req := kmsg.MetadataRequest{
 		Topics: []kmsg.MetadataRequestTopic{
 			{
-				Topic: topicName,
+				Topic: &topicName,
 			},
 		},
 	}
