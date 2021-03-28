@@ -21,7 +21,11 @@ jobs:
         with:
           images: quay.io/cloudhut/owl-shop
           tag-sha: true # add git short SHA as Docker tag
-          tag-match-latest: true
+          tag-latest: true
+          tag-semver: |
+            v{{version}}
+            v{{major}}.{{minor}}
+            v{{major}}
 
       - name: Login to DockerHub
         uses: docker/login-action@v1
