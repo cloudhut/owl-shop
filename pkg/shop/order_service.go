@@ -267,11 +267,16 @@ func (svc *OrderService) createKafkaTopic(ctx context.Context) error {
 	}
 
 	// Check for inner kafka errors
-	if len(res.Topics) != 1 {
-		return fmt.Errorf("unexpected topic response count from create topics request. Expected count '1', actual returned count: '%v'", len(res.Topics))
+	if len(res.Topics) != 2 {
+		return fmt.Errorf("unexpected topic response count from create topics request. Expected count '2', actual returned count: '%v'", len(res.Topics))
 	}
 
 	err = kerr.ErrorForCode(res.Topics[0].ErrorCode)
+	if err != nil {
+		return fmt.Errorf("create topics request failed. Inner kafka error: %w", err)
+	}
+
+	err = kerr.ErrorForCode(res.Topics[1].ErrorCode)
 	if err != nil {
 		return fmt.Errorf("create topics request failed. Inner kafka error: %w", err)
 	}
