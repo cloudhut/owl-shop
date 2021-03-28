@@ -9,9 +9,10 @@ require (
 	github.com/golang/protobuf v1.4.3
 	github.com/google/go-cmp v0.5.4 // indirect
 	github.com/jcmturner/gokrb5/v8 v8.4.2
+	github.com/knadh/koanf v0.15.0
 	github.com/kr/text v0.2.0 // indirect
+	github.com/mitchellh/mapstructure v1.2.2
 	github.com/mroth/weightedrand v0.4.0
-	github.com/pierrec/lz4 v2.6.0+incompatible // indirect
 	github.com/prometheus/client_golang v1.8.0
 	github.com/prometheus/common v0.15.0 // indirect
 	github.com/twmb/franz-go v0.6.9
@@ -24,7 +25,7 @@ require (
 	golang.org/x/tools v0.0.0-20201211185031-d93e913c1a58 // indirect
 	google.golang.org/protobuf v1.25.0
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
-	gopkg.in/yaml.v2 v2.4.0
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776 // indirect
 	honnef.co/go/tools v0.0.1-2020.1.6 // indirect
 )

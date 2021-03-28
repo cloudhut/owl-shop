@@ -13,7 +13,7 @@ func main() {
 	rand.Seed(time.Now().UTC().UnixNano())
 
 	startupLogger := zap.NewExample()
-	cfg, err := parseConfig()
+	cfg, err := LoadConfig(startupLogger)
 	if err != nil {
 		startupLogger.Fatal("failed to parse config", zap.Error(err))
 	}

@@ -3,10 +3,17 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/cloudhut/common/flagext"
 	"github.com/cloudhut/common/logging"
 	"github.com/cloudhut/owl-shop/pkg/shop"
-	"gopkg.in/yaml.v2"
-	"io/ioutil"
+	"github.com/knadh/koanf"
+	"github.com/knadh/koanf/parsers/yaml"
+	"github.com/knadh/koanf/providers/env"
+	"github.com/knadh/koanf/providers/file"
+	"github.com/mitchellh/mapstructure"
+	"go.uber.org/zap"
+	"os"
+	"strings"
 )
 
 type config struct {
@@ -36,39 +43,74 @@ func (c *config) RegisterFlags(f *flag.FlagSet) {
 	c.Shop.RegisterFlags(f)
 }
 
-// parseYAMLConfig reads the YAML-formatted config from filepath into cfg.
-func parseYAMLConfig(filepath string, cfg *config) error {
-	buf, err := ioutil.ReadFile(filepath)
-	if err != nil {
-		return fmt.Errorf("error reading config file: %w", err)
-	}
-
-	err = yaml.UnmarshalStrict(buf, cfg)
-	if err != nil {
-		return fmt.Errorf("error parsing config file: %w", err)
-	}
-
-	return nil
-}
-
-func parseConfig() (*config, error) {
-	cfg := &config{}
+func LoadConfig(logger *zap.Logger) (config, error) {
+	k := koanf.New(".")
+	var cfg config
 	cfg.SetDefaults()
-	cfg.RegisterFlags(flag.CommandLine)
+
+	// Flags have to be parsed first because the yaml config filepath is supposed to be passed via flags
+	flagext.RegisterFlags(&cfg)
 	flag.Parse()
 
-	// This can not be part of the Config's validate() method because we haven't decoded the YAML config at this point
-	if cfg.ConfigFilepath == "" {
-		return nil, fmt.Errorf("you must specify the path to the config filepath using the --config.filepath flag")
+	// 1. Check if a config filepath is set via flags. If there is one we'll try to load the file using a YAML Parser
+	var configFilepath string
+	if cfg.ConfigFilepath != "" {
+		configFilepath = cfg.ConfigFilepath
+	} else {
+		envKey := "CONFIG_FILEPATH"
+		configFilepath = os.Getenv(envKey)
+	}
+	if configFilepath == "" {
+		logger.Info("config filepath is not set, proceeding with options set from env variables and flags")
+	} else {
+		err := k.Load(file.Provider(configFilepath), yaml.Parser())
+		if err != nil {
+			return config{}, fmt.Errorf("failed to parse YAML config: %w", err)
+		}
 	}
 
-	err := parseYAMLConfig(cfg.ConfigFilepath, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load yaml config: %w", err)
+	// 2. Unmarshal the config into our config struct using the YAML and then ENV parser
+	// We could unmarshal the loaded koanf input after loading both providers, however we want to unmarshal the YAML
+	// config with `ErrorUnused` set to true, but unmarshal environment variables with `ErrorUnused` set to false (default).
+	// Rationale: Orchestrators like Kubernetes inject unrelated environment variables, which we still want to allow.
+	unmarshalCfg := koanf.UnmarshalConf{
+		Tag:       "yaml",
+		FlatPaths: false,
+		DecoderConfig: &mapstructure.DecoderConfig{
+			DecodeHook: mapstructure.ComposeDecodeHookFunc(
+				mapstructure.StringToTimeDurationHookFunc()),
+			Metadata:         nil,
+			Result:           &cfg,
+			WeaklyTypedInput: true,
+			ErrorUnused:      true,
+			TagName:          "yaml",
+		},
 	}
-	err = cfg.Validate()
+	err := k.UnmarshalWithConf("", &cfg, unmarshalCfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to validate config: %w", err)
+		return config{}, fmt.Errorf("failed to unmarshal YAML config into config struct: %w", err)
+	}
+
+	err = k.Load(env.ProviderWithValue("", ".", func(s string, v string) (string, interface{}) {
+		// key := strings.Replace(strings.ToLower(s), "_", ".", -1)
+		key := strings.Replace(strings.ToLower(s), "_", ".", -1)
+		// Check to exist if we have a configuration option already and see if it's a slice
+		// If there is a comma in the value, split the value into a slice by the comma.
+		if strings.Contains(v, ",") {
+			return key, strings.Split(v, ",")
+		}
+
+		// Otherwise return the new key with the unaltered value
+		return key, v
+	}), nil)
+	if err != nil {
+		return config{}, fmt.Errorf("failed to unmarshal environment variables into config struct: %w", err)
+	}
+
+	unmarshalCfg.DecoderConfig.ErrorUnused = false
+	err = k.UnmarshalWithConf("", &cfg, unmarshalCfg)
+	if err != nil {
+		return config{}, err
 	}
 
 	return cfg, nil
