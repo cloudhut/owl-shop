@@ -4,15 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/cloudhut/owl-shop/pkg/fake"
-	"github.com/cloudhut/owl-shop/pkg/kafka"
-	"github.com/twmb/franz-go/pkg/kerr"
-	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/kmsg"
-	"go.uber.org/zap"
-	"google.golang.org/protobuf/proto"
 	"sync"
 	"time"
+
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
+	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
+
+	"github.com/cloudhut/owl-shop/pkg/fake"
+	"github.com/cloudhut/owl-shop/pkg/kafka"
 )
 
 type OrderService struct {
@@ -38,7 +39,11 @@ func NewOrderService(cfg Config, logger *zap.Logger) (*OrderService, error) {
 		return nil, fmt.Errorf("failed to create kafka service: %w", err)
 	}
 
-	consumerClient, err := kafkaSvc.NewKafkaClient()
+	consumerClient, err := kafkaSvc.NewKafkaClient(
+		kgo.ConsumerGroup(clientID),
+		kgo.ConsumeTopics(cfg.GlobalPrefix+"customers"),
+		kgo.AutoCommitInterval(500*time.Millisecond),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kafka consumer client: %w", err)
 	}
@@ -64,14 +69,9 @@ func NewOrderService(cfg Config, logger *zap.Logger) (*OrderService, error) {
 }
 
 func (svc *OrderService) Start() {
-	svc.consumerClient.AssignGroup(
-		svc.clientID,
-		kgo.GroupTopics(svc.cfg.GlobalPrefix+"customers"),
-		kgo.AutoCommitInterval(500*time.Millisecond))
 	for {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		fetches := svc.consumerClient.PollFetches(ctx)
-		cancel()
+		fetches := svc.consumerClient.PollFetches(context.Background())
+
 		errors := fetches.Errors()
 		if errors != nil {
 			svc.logger.Warn("failed to poll fetches", zap.Error(errors[0].Err))
@@ -104,26 +104,27 @@ func (svc *OrderService) Start() {
 func (svc *OrderService) Initialize(ctx context.Context) error {
 	svc.logger.Info("initializing order service")
 
-	// 1. Test kafka connectivity
-	metadata, err := svc.kafkaSvc.GetMetadata(ctx)
+	topicCfg := map[string]*string{
+		"cleanup.policy": kadm.StringPtr("compact"),
+	}
+	err := svc.kafkaSvc.ReconcileTopic(ctx,
+		svc.topicName,
+		svc.cfg.Kafka.TopicPartitionCount,
+		svc.cfg.Kafka.TopicReplicationFactor,
+		topicCfg,
+	)
 	if err != nil {
-		return fmt.Errorf("failed to get metadata to test kafka connectivity: %w", err)
+		return fmt.Errorf("failed to create topic: %w", err)
 	}
 
-	// 2. Ensure that the Kafka topic exists
-	isTopicExistent := false
-	for _, topic := range metadata.Topics {
-		if topic.Topic == svc.topicName {
-			isTopicExistent = true
-			break
-		}
-	}
-	if !isTopicExistent {
-		err := svc.createKafkaTopic(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to create kafka topic '%v': %w", svc.topicName, err)
-		}
-		svc.logger.Info("successfully created Kafka topic", zap.String("topic_name", svc.topicName))
+	err = svc.kafkaSvc.ReconcileTopic(ctx,
+		svc.topicNameProtobuf,
+		svc.cfg.Kafka.TopicPartitionCount,
+		svc.cfg.Kafka.TopicReplicationFactor,
+		topicCfg,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create protobuf topic: %w", err)
 	}
 
 	return nil
@@ -165,10 +166,7 @@ func (svc *OrderService) produceOrderJSON(order fake.Order) error {
 		Topic:     svc.topicName,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-	defer cancel()
-
-	err = svc.kafkaSvc.KafkaClient.Produce(ctx, &rec, func(rec *kgo.Record, err error) {
+	svc.kafkaSvc.KafkaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {
 		if err != nil {
 			svc.logger.Error("failed to produce record",
 				zap.String("topic_name", rec.Topic),
@@ -177,9 +175,6 @@ func (svc *OrderService) produceOrderJSON(order fake.Order) error {
 			return
 		}
 	})
-	if err != nil {
-		return fmt.Errorf("failed to produce: %w", err)
-	}
 
 	return nil
 }
@@ -202,10 +197,7 @@ func (svc *OrderService) produceOrderProtobuf(order fake.Order) error {
 		Topic:     svc.topicNameProtobuf,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-	defer cancel()
-
-	err = svc.kafkaSvc.KafkaClient.Produce(ctx, &rec, func(rec *kgo.Record, err error) {
+	svc.kafkaSvc.KafkaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {
 		if err != nil {
 			svc.logger.Error("failed to produce record",
 				zap.String("topic_name", rec.Topic),
@@ -214,9 +206,6 @@ func (svc *OrderService) produceOrderProtobuf(order fake.Order) error {
 			return
 		}
 	})
-	if err != nil {
-		return fmt.Errorf("failed to produce: %w", err)
-	}
 
 	return nil
 }
@@ -233,53 +222,4 @@ func (svc *OrderService) popCustomerFromBuffer() (fake.Customer, error) {
 	svc.recentCustomers = svc.recentCustomers[1:]
 
 	return customer, nil
-}
-
-func (svc *OrderService) createKafkaTopic(ctx context.Context) error {
-	cleanupPolicy := "compact"
-	req := kmsg.CreateTopicsRequest{
-		Topics: []kmsg.CreateTopicsRequestTopic{
-			// Normal Topic for JSON
-			{
-				Topic:             svc.topicName,
-				NumPartitions:     6,
-				ReplicationFactor: svc.cfg.Kafka.TopicReplicationFactor,
-				Configs: []kmsg.CreateTopicsRequestTopicConfig{
-					{"cleanup.policy", &cleanupPolicy},
-				},
-			},
-
-			// Protobuf serialized orders go into a separate topic
-			{
-				Topic:             svc.topicNameProtobuf,
-				NumPartitions:     6,
-				ReplicationFactor: svc.cfg.Kafka.TopicReplicationFactor,
-				Configs: []kmsg.CreateTopicsRequestTopicConfig{
-					{"cleanup.policy", &cleanupPolicy},
-				},
-			},
-		},
-		TimeoutMillis: 60 * 1000,
-	}
-	res, err := req.RequestWith(ctx, svc.kafkaSvc.KafkaClient)
-	if err != nil {
-		return fmt.Errorf("create topics request failed: %w", err)
-	}
-
-	// Check for inner kafka errors
-	if len(res.Topics) != 2 {
-		return fmt.Errorf("unexpected topic response count from create topics request. Expected count '2', actual returned count: '%v'", len(res.Topics))
-	}
-
-	err = kerr.ErrorForCode(res.Topics[0].ErrorCode)
-	if err != nil {
-		return fmt.Errorf("create topics request failed. Inner kafka error: %w", err)
-	}
-
-	err = kerr.ErrorForCode(res.Topics[1].ErrorCode)
-	if err != nil {
-		return fmt.Errorf("create topics request failed. Inner kafka error: %w", err)
-	}
-
-	return nil
 }

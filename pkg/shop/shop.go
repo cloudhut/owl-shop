@@ -3,11 +3,12 @@ package shop
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"time"
+
 	"github.com/mroth/weightedrand"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
-	"net/http"
-	"time"
 )
 
 type Shop struct {
@@ -51,7 +52,7 @@ func New(cfg Config, logger *zap.Logger) (*Shop, error) {
 
 	err = addressSvc.Initialize(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize customer service: %w", err)
+		return nil, fmt.Errorf("failed to initialize address service: %w", err)
 	}
 
 	err = frontendSvc.Initialize(ctx)

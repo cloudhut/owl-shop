@@ -3,15 +3,16 @@ package shop
 import (
 	"context"
 	"fmt"
-	"github.com/brianvoe/gofakeit/v5"
-	"github.com/cloudhut/owl-shop/pkg/fake"
-	"github.com/cloudhut/owl-shop/pkg/kafka"
-	"github.com/twmb/franz-go/pkg/kerr"
-	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/kmsg"
-	"go.uber.org/zap"
 	"sync"
 	"time"
+
+	"github.com/brianvoe/gofakeit/v5"
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
+	"go.uber.org/zap"
+
+	"github.com/cloudhut/owl-shop/pkg/fake"
+	"github.com/cloudhut/owl-shop/pkg/kafka"
 )
 
 type CustomerService struct {
@@ -53,26 +54,17 @@ func NewCustomerService(cfg Config, logger *zap.Logger) (*CustomerService, error
 func (svc *CustomerService) Initialize(ctx context.Context) error {
 	svc.logger.Info("initializing customer service")
 
-	// 1. Test kafka connectivity
-	metadata, err := svc.kafkaSvc.GetMetadata(ctx)
+	err := svc.kafkaSvc.ReconcileTopic(
+		ctx,
+		svc.topicName,
+		svc.cfg.Kafka.TopicPartitionCount,
+		svc.cfg.Kafka.TopicReplicationFactor,
+		map[string]*string{
+			"cleanup.policy": kadm.StringPtr("compact"),
+		},
+	)
 	if err != nil {
-		return fmt.Errorf("failed to get metadata to test kafka connectivity: %w", err)
-	}
-
-	// 2. Ensure that Kafka topic exists
-	isTopicExistent := false
-	for _, topic := range metadata.Topics {
-		if topic.Topic == svc.topicName {
-			isTopicExistent = true
-			break
-		}
-	}
-	if !isTopicExistent {
-		err := svc.createKafkaTopic(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to create kafka topic '%v': %w", svc.topicName, err)
-		}
-		svc.logger.Info("successfully created Kafka topic", zap.String("topic_name", svc.topicName))
+		return fmt.Errorf("failed to reconcile topic: %w", err)
 	}
 
 	svc.logger.Info("successfully initialized customer service")
@@ -80,6 +72,8 @@ func (svc *CustomerService) Initialize(ctx context.Context) error {
 	return nil
 }
 
+// CreateCustomer creates a fake customer struct and then produces the JSON serialized
+// customer to the customers topic.
 func (svc *CustomerService) CreateCustomer() {
 	customer := fake.NewCustomer()
 	svc.recentCustomersMu.Lock()
@@ -97,6 +91,8 @@ func (svc *CustomerService) CreateCustomer() {
 	return
 }
 
+// ModifyCustomer takes an existing customer from the cache, modifies the last name
+// and sends the updated customer version to the customers topic.
 func (svc *CustomerService) ModifyCustomer() {
 	customer, err := svc.popCustomerFromBuffer()
 	if err != nil {
@@ -117,6 +113,8 @@ func (svc *CustomerService) ModifyCustomer() {
 	return
 }
 
+// DeleteCustomer sends a tombstone for an existing customer that was stored
+// in the customer cache.
 func (svc *CustomerService) DeleteCustomer() {
 	customer, err := svc.popCustomerFromBuffer()
 	if err != nil {
@@ -126,7 +124,7 @@ func (svc *CustomerService) DeleteCustomer() {
 
 	svc.logger.Debug("deleted customer")
 
-	err = svc.produceTombstone(customer.ID)
+	svc.produceTombstone(customer.ID)
 	if err != nil {
 		svc.logger.Warn("failed to produce customer tombstone", zap.Error(err))
 		return
@@ -148,7 +146,7 @@ func (svc *CustomerService) popCustomerFromBuffer() (fake.Customer, error) {
 	return customer, nil
 }
 
-func (svc *CustomerService) produceTombstone(customerID string) error {
+func (svc *CustomerService) produceTombstone(customerID string) {
 	rec := kgo.Record{
 		Key:       []byte(customerID),
 		Value:     nil,
@@ -156,10 +154,7 @@ func (svc *CustomerService) produceTombstone(customerID string) error {
 		Topic:     svc.topicName,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-	defer cancel()
-
-	err := svc.kafkaSvc.KafkaClient.Produce(ctx, &rec, func(rec *kgo.Record, err error) {
+	svc.kafkaSvc.KafkaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {
 		if err != nil {
 			svc.logger.Error("failed to produce tombstone record",
 				zap.String("topic_name", rec.Topic),
@@ -168,11 +163,6 @@ func (svc *CustomerService) produceTombstone(customerID string) error {
 			return
 		}
 	})
-	if err != nil {
-		return fmt.Errorf("failed to produce tombstone: %w", err)
-	}
-
-	return nil
 }
 
 func (svc *CustomerService) produceCustomer(customer fake.Customer) error {
@@ -189,10 +179,7 @@ func (svc *CustomerService) produceCustomer(customer fake.Customer) error {
 		Topic:     svc.topicName,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-	defer cancel()
-
-	err = svc.kafkaSvc.KafkaClient.Produce(ctx, &rec, func(rec *kgo.Record, err error) {
+	svc.kafkaSvc.KafkaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {
 		if err != nil {
 			svc.logger.Error("failed to produce record",
 				zap.String("topic_name", rec.Topic),
@@ -203,40 +190,6 @@ func (svc *CustomerService) produceCustomer(customer fake.Customer) error {
 	})
 	if err != nil {
 		return fmt.Errorf("failed to produce: %w", err)
-	}
-
-	return nil
-}
-
-// createKafkaTopic tries to create the Kafka topic
-func (svc *CustomerService) createKafkaTopic(ctx context.Context) error {
-	cleanupPolicy := "compact"
-	req := kmsg.CreateTopicsRequest{
-		Topics: []kmsg.CreateTopicsRequestTopic{
-			{
-				Topic:             svc.topicName,
-				NumPartitions:     6,
-				ReplicationFactor: svc.cfg.Kafka.TopicReplicationFactor,
-				Configs: []kmsg.CreateTopicsRequestTopicConfig{
-					{"cleanup.policy", &cleanupPolicy},
-				},
-			},
-		},
-		TimeoutMillis: 60 * 1000,
-	}
-	res, err := req.RequestWith(ctx, svc.kafkaSvc.KafkaClient)
-	if err != nil {
-		return fmt.Errorf("create topics request failed: %w", err)
-	}
-
-	// Check for inner kafka errors
-	if len(res.Topics) != 1 {
-		return fmt.Errorf("unexpected topic response count from create topics request. Expected count '1', actual returned count: '%v'", len(res.Topics))
-	}
-
-	err = kerr.ErrorForCode(res.Topics[0].ErrorCode)
-	if err != nil {
-		return fmt.Errorf("create topics request failed. Inner kafka error: %w", err)
 	}
 
 	return nil

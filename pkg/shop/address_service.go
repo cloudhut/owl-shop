@@ -4,16 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/cloudhut/owl-shop/pkg/fake"
-	"github.com/cloudhut/owl-shop/pkg/kafka"
-	"github.com/twmb/franz-go/pkg/kerr"
-	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/kmsg"
-	"go.uber.org/zap"
 	"sync"
 	"time"
+
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
+	"go.uber.org/zap"
+
+	"github.com/cloudhut/owl-shop/pkg/fake"
+	"github.com/cloudhut/owl-shop/pkg/kafka"
 )
 
+// AddressService consumes the customers topic to collect customer ID and name
+// and then produces fake addresses for that customer.
 type AddressService struct {
 	cfg            Config
 	logger         *zap.Logger
@@ -28,6 +31,8 @@ type AddressService struct {
 	topicName string
 }
 
+// NewAddressService creates the service that publishes addresses to the
+// address topic.
 func NewAddressService(cfg Config, logger *zap.Logger) (*AddressService, error) {
 	clientID := cfg.GlobalPrefix + "address-service"
 	cfg.Kafka.ClientID = clientID
@@ -36,9 +41,14 @@ func NewAddressService(cfg Config, logger *zap.Logger) (*AddressService, error) 
 		return nil, fmt.Errorf("failed to create kafka service: %w", err)
 	}
 
-	consumerClient, err := kafkaSvc.NewKafkaClient()
+	topicName := cfg.GlobalPrefix + "addresses"
+	consumerClient, err := kafkaSvc.NewKafkaClient(
+		kgo.ConsumeTopics(topicName),
+		kgo.ConsumerGroup(clientID),
+		kgo.AutoCommitInterval(500*time.Millisecond),
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create kafka consumer client: %w", err)
+		return nil, fmt.Errorf("failed to create consumer client: %w", err)
 	}
 
 	// This slice is used to keep some customers in the buffer so that we can produce addresses for these customers
@@ -60,71 +70,70 @@ func NewAddressService(cfg Config, logger *zap.Logger) (*AddressService, error) 
 	}, nil
 }
 
+// Initialize address service.
 func (svc *AddressService) Initialize(ctx context.Context) error {
 	svc.logger.Info("initializing address service")
 
-	// 1. Test kafka connectivity
-	metadata, err := svc.kafkaSvc.GetMetadata(ctx)
+	err := svc.kafkaSvc.ReconcileTopic(ctx,
+		svc.topicName,
+		svc.cfg.Kafka.TopicPartitionCount,
+		svc.cfg.Kafka.TopicReplicationFactor,
+		map[string]*string{
+			"cleanup.policy": kadm.StringPtr("compact"),
+		},
+	)
 	if err != nil {
-		return fmt.Errorf("failed to get metadata to test kafka connectivity: %w", err)
-	}
-
-	// 2. Ensure that Kafka topic exists
-	isTopicExistent := false
-	for _, topic := range metadata.Topics {
-		if topic.Topic == svc.topicName {
-			isTopicExistent = true
-			break
-		}
-	}
-	if !isTopicExistent {
-		err := svc.createKafkaTopic(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to create kafka topic '%v': %w", svc.topicName, err)
-		}
-		svc.logger.Info("successfully created Kafka topic", zap.String("topic_name", svc.topicName))
+		return fmt.Errorf("failed to reconcile topic: %w", err)
 	}
 
 	return nil
 }
 
+// Start consuming messages from customers topic that are required
+// to produce address records.
 func (svc *AddressService) Start() {
-	svc.consumerClient.AssignGroup(svc.clientID,
-		kgo.GroupTopics(svc.cfg.GlobalPrefix+"customers"),
-		kgo.AutoCommitInterval(500*time.Millisecond))
 	for {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		fetches := svc.consumerClient.PollFetches(ctx)
-		cancel()
-		errors := fetches.Errors()
-		if errors != nil {
-			svc.logger.Warn("failed to poll fetches", zap.Error(errors[0].Err))
+		fetches := svc.consumerClient.PollFetches(context.Background())
+
+		if fetches.IsClientClosed() {
+			svc.logger.Warn("client closed")
+			return
 		}
 
-		iter := fetches.RecordIter()
-		for !iter.Done() {
-			rec := iter.Next()
-			kafkaMessagesConsumedTotal.With(map[string]string{"event_type": EventTypeCustomerConsumed}).Inc()
+		fetches.EachError(func(topic string, partition int32, err error) {
+			svc.logger.Error("failed to poll fetches",
+				zap.String("topic", topic),
+				zap.Int32("partition", partition),
+				zap.Error(err))
+		})
+
+		fetches.EachRecord(func(rec *kgo.Record) {
+			kafkaMessagesConsumedTotal.
+				With(map[string]string{"event_type": EventTypeCustomerConsumed}).
+				Inc()
 
 			if rec.Value == nil {
-				continue
+				return
 			}
+
 			customer := fake.Customer{}
 			err := json.Unmarshal(rec.Value, &customer)
 			if err != nil {
 				// Skip message
 				svc.logger.Warn("failed to deserialize customer", zap.Error(err))
-				continue
+				return
 			}
 			svc.recentCustomerMu.Lock()
 			if len(svc.recentCustomers) < svc.bufferSize {
 				svc.recentCustomers = append(svc.recentCustomers, customer)
 			}
 			svc.recentCustomerMu.Unlock()
-		}
+		})
 	}
 }
 
+// CreateAddress produces a new fake address record and produces that record
+// to the address topic.
 func (svc *AddressService) CreateAddress() {
 	customer, err := svc.popCustomerFromBuffer()
 	if err != nil {
@@ -147,28 +156,21 @@ func (svc *AddressService) produceAddress(address fake.Address) error {
 	}
 
 	rec := kgo.Record{
-		Key:       []byte(address.ID),
-		Value:     serialized,
-		Headers:   []kgo.RecordHeader{{Key: "revision", Value: []byte("0")}},
-		Timestamp: time.Now(),
-		Topic:     svc.topicName,
+		Key:     []byte(address.ID),
+		Value:   serialized,
+		Headers: []kgo.RecordHeader{{Key: "revision", Value: []byte("0")}},
+		Topic:   svc.topicName,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-	defer cancel()
-
-	err = svc.kafkaSvc.KafkaClient.Produce(ctx, &rec, func(rec *kgo.Record, err error) {
-		if err != nil {
-			svc.logger.Error("failed to produce record",
-				zap.String("topic_name", rec.Topic),
-				zap.Error(err),
-			)
+	svc.kafkaSvc.KafkaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {
+		if err == nil {
 			return
 		}
+		svc.logger.Error("failed to produce record",
+			zap.String("topic_name", rec.Topic),
+			zap.Error(err),
+		)
 	})
-	if err != nil {
-		return fmt.Errorf("failed to produce: %w", err)
-	}
 	return nil
 }
 
@@ -184,38 +186,4 @@ func (svc *AddressService) popCustomerFromBuffer() (fake.Customer, error) {
 	svc.recentCustomers = svc.recentCustomers[1:]
 
 	return customer, nil
-}
-
-// createKafkaTopic tries to create the Kafka topic
-func (svc *AddressService) createKafkaTopic(ctx context.Context) error {
-	cleanupPolicy := "compact"
-	req := kmsg.CreateTopicsRequest{
-		Topics: []kmsg.CreateTopicsRequestTopic{
-			{
-				Topic:             svc.topicName,
-				NumPartitions:     6,
-				ReplicationFactor: svc.cfg.Kafka.TopicReplicationFactor,
-				Configs: []kmsg.CreateTopicsRequestTopicConfig{
-					{"cleanup.policy", &cleanupPolicy},
-				},
-			},
-		},
-		TimeoutMillis: 15 * 1000,
-	}
-	res, err := req.RequestWith(ctx, svc.kafkaSvc.KafkaClient)
-	if err != nil {
-		return fmt.Errorf("create topics request failed: %w", err)
-	}
-
-	// Check for inner kafka errors
-	if len(res.Topics) != 1 {
-		return fmt.Errorf("unexpected topic response count from create topics request. Expected count '1', actual returned count: '%v'", len(res.Topics))
-	}
-
-	err = kerr.ErrorForCode(res.Topics[0].ErrorCode)
-	if err != nil {
-		return fmt.Errorf("create topics request failed. Inner kafka error: %w", err)
-	}
-
-	return nil
 }

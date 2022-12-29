@@ -5,6 +5,10 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"io/ioutil"
+	"net"
+	"time"
+
 	"github.com/jcmturner/gokrb5/v8/client"
 	krbconfig "github.com/jcmturner/gokrb5/v8/config"
 	"github.com/jcmturner/gokrb5/v8/keytab"
@@ -15,9 +19,6 @@ import (
 	"github.com/twmb/franz-go/pkg/sasl/plain"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
 	"go.uber.org/zap"
-	"io/ioutil"
-	"net"
-	"time"
 )
 
 // NewKgoConfig creates a new Config for the Kafka Client as exposed by the franz-go library.
@@ -26,8 +27,9 @@ func NewKgoConfig(cfg *Config, logger *zap.Logger) ([]kgo.Opt, error) {
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(cfg.Brokers...),
 		kgo.MaxVersions(kversion.V2_6_0()),
+		kgo.RecordDeliveryTimeout(10 * time.Second),
 		kgo.ClientID(cfg.ClientID),
-		kgo.RequiredAcks(kgo.LeaderAck()),
+		kgo.RequiredAcks(kgo.AllISRAcks()),
 	}
 
 	// Create Logger
