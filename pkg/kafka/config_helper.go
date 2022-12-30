@@ -2,10 +2,7 @@ package kafka
 
 import (
 	"crypto/tls"
-	"crypto/x509"
-	"encoding/pem"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"time"
 
@@ -18,6 +15,7 @@ import (
 	"github.com/twmb/franz-go/pkg/sasl/kerberos"
 	"github.com/twmb/franz-go/pkg/sasl/plain"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
+	"github.com/twmb/tlscfg"
 	"go.uber.org/zap"
 )
 
@@ -100,60 +98,25 @@ func NewKgoConfig(cfg *Config, logger *zap.Logger) ([]kgo.Opt, error) {
 	}
 
 	// Configure TLS
-	var caCertPool *x509.CertPool
 	if cfg.TLS.Enabled {
-		// Root CA
-		if cfg.TLS.CaFilepath != "" {
-			ca, err := ioutil.ReadFile(cfg.TLS.CaFilepath)
-			if err != nil {
-				return nil, err
-			}
-			caCertPool = x509.NewCertPool()
-			isSuccessful := caCertPool.AppendCertsFromPEM(ca)
-			if !isSuccessful {
-				logger.Warn("failed to append ca file to cert pool, is this a valid PEM format?")
-			}
-		}
-
-		// If configured load TLS cert & key - Mutual TLS
-		var certificates []tls.Certificate
-		if cfg.TLS.CertFilepath != "" && cfg.TLS.KeyFilepath != "" {
-			// 1. Read certificates
-			cert, err := ioutil.ReadFile(cfg.TLS.CertFilepath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to TLS certificate: %w", err)
-			}
-
-			privateKey, err := ioutil.ReadFile(cfg.TLS.KeyFilepath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read TLS key: %w", err)
-			}
-
-			// 2. Check if private key needs to be decrypted. Decrypt it if passphrase is given, otherwise return error
-			pemBlock, _ := pem.Decode(privateKey)
-			if pemBlock == nil {
-				return nil, fmt.Errorf("no valid private key found")
-			}
-
-			if x509.IsEncryptedPEMBlock(pemBlock) {
-				decryptedKey, err := x509.DecryptPEMBlock(pemBlock, []byte(cfg.TLS.Passphrase))
-				if err != nil {
-					return nil, fmt.Errorf("private key is encrypted, but could not decrypt it: %s", err)
+		tlsCfg, err := tlscfg.New(
+			tlscfg.MaybeWithDiskCA(cfg.TLS.CaFilepath, tlscfg.ForClient),
+			tlscfg.MaybeWithDiskKeyPair(cfg.TLS.CertFilepath, cfg.TLS.KeyFilepath),
+			tlscfg.WithSystemCertPool(),
+			tlscfg.WithOverride(func(config *tls.Config) error {
+				if cfg.TLS.InsecureSkipTLSVerify {
+					config.InsecureSkipVerify = true
 				}
-				// If private key was encrypted we can overwrite the original contents now with the decrypted version
-				privateKey = pem.EncodeToMemory(&pem.Block{Type: pemBlock.Type, Bytes: decryptedKey})
-			}
-			tlsCert, err := tls.X509KeyPair(cert, privateKey)
-			certificates = []tls.Certificate{tlsCert}
+				return nil
+			}),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create tls config: %w", err)
 		}
 
 		tlsDialer := &tls.Dialer{
 			NetDialer: &net.Dialer{Timeout: 10 * time.Second},
-			Config: &tls.Config{
-				InsecureSkipVerify: cfg.TLS.InsecureSkipTLSVerify,
-				Certificates:       certificates,
-				RootCAs:            caCertPool,
-			},
+			Config:    tlsCfg,
 		}
 		opts = append(opts, kgo.Dialer(tlsDialer.DialContext))
 	}

@@ -19,7 +19,6 @@ type Config struct {
 
 // RegisterFlags for all sensitive Kafka SASL configs.
 func (c *Config) RegisterFlags(f *flag.FlagSet) {
-	c.TLS.RegisterFlags(f)
 	c.SASL.RegisterFlags(f)
 }
 
