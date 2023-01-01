@@ -1,56 +1,50 @@
-package main
+package config
 
 import (
-	"flag"
 	"fmt"
-	"github.com/cloudhut/common/flagext"
+	"os"
+	"strings"
+
 	"github.com/cloudhut/common/logging"
-	"github.com/cloudhut/owl-shop/pkg/shop"
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
-	"os"
-	"strings"
 )
 
-type config struct {
+// Config is the root config.
+type Config struct {
 	ConfigFilepath string
-	Logger         logging.Config `yaml:"logger"`
 
-	Shop shop.Config `yaml:"shop"`
+	Logger logging.Config `yaml:"logger"`
+	Kafka  Kafka          `yaml:"kafka"`
+	Shop   Shop           `yaml:"shop"`
 }
 
-func (c *config) SetDefaults() {
+func (c *Config) SetDefaults() {
 	c.Logger.SetDefaults()
+	c.Kafka.SetDefaults()
 	c.Shop.SetDefaults()
 }
 
-func (c *config) Validate() error {
-	err := c.Logger.Set(c.Logger.LogLevelInput) // Parses LogLevel
-	if err != nil {
+func (c *Config) Validate() error {
+	if err := c.Logger.Set(c.Logger.LogLevelInput); err != nil {
 		return fmt.Errorf("failed to validate loglevel input: %w", err)
+	}
+
+	if err := c.Kafka.Validate(); err != nil {
+		return fmt.Errorf("failed to validate Kafka config: %w", err)
 	}
 
 	return nil
 }
 
-// RegisterFlags for all (sub)configs
-func (c *config) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&c.ConfigFilepath, "config.filepath", "", "Path to the config file")
-	c.Shop.RegisterFlags(f)
-}
-
-func LoadConfig(logger *zap.Logger) (config, error) {
+func LoadConfig(logger *zap.Logger) (Config, error) {
 	k := koanf.New(".")
-	var cfg config
+	var cfg Config
 	cfg.SetDefaults()
-
-	// Flags have to be parsed first because the yaml config filepath is supposed to be passed via flags
-	flagext.RegisterFlags(&cfg)
-	flag.Parse()
 
 	// 1. Check if a config filepath is set via flags. If there is one we'll try to load the file using a YAML Parser
 	var configFilepath string
@@ -65,7 +59,7 @@ func LoadConfig(logger *zap.Logger) (config, error) {
 	} else {
 		err := k.Load(file.Provider(configFilepath), yaml.Parser())
 		if err != nil {
-			return config{}, fmt.Errorf("failed to parse YAML config: %w", err)
+			return Config{}, fmt.Errorf("failed to parse YAML config: %w", err)
 		}
 	}
 
@@ -88,11 +82,10 @@ func LoadConfig(logger *zap.Logger) (config, error) {
 	}
 	err := k.UnmarshalWithConf("", &cfg, unmarshalCfg)
 	if err != nil {
-		return config{}, fmt.Errorf("failed to unmarshal YAML config into config struct: %w", err)
+		return Config{}, fmt.Errorf("failed to unmarshal YAML config into config struct: %w", err)
 	}
 
 	err = k.Load(env.ProviderWithValue("", ".", func(s string, v string) (string, interface{}) {
-		// key := strings.Replace(strings.ToLower(s), "_", ".", -1)
 		key := strings.Replace(strings.ToLower(s), "_", ".", -1)
 		// Check to exist if we have a configuration option already and see if it's a slice
 		// If there is a comma in the value, split the value into a slice by the comma.
@@ -104,13 +97,13 @@ func LoadConfig(logger *zap.Logger) (config, error) {
 		return key, v
 	}), nil)
 	if err != nil {
-		return config{}, fmt.Errorf("failed to unmarshal environment variables into config struct: %w", err)
+		return Config{}, fmt.Errorf("failed to unmarshal environment variables into config struct: %w", err)
 	}
 
 	unmarshalCfg.DecoderConfig.ErrorUnused = false
 	err = k.UnmarshalWithConf("", &cfg, unmarshalCfg)
 	if err != nil {
-		return config{}, err
+		return Config{}, err
 	}
 
 	return cfg, nil

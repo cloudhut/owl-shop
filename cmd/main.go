@@ -1,11 +1,14 @@
 package main
 
 import (
-	"github.com/cloudhut/common/logging"
-	"github.com/cloudhut/owl-shop/pkg/shop"
-	"go.uber.org/zap"
 	"math/rand"
 	"time"
+
+	"github.com/cloudhut/common/logging"
+	"go.uber.org/zap"
+
+	"github.com/cloudhut/owl-shop/pkg/config"
+	"github.com/cloudhut/owl-shop/pkg/shop"
 )
 
 func main() {
@@ -13,14 +16,14 @@ func main() {
 	rand.Seed(time.Now().UTC().UnixNano())
 
 	startupLogger := zap.NewExample()
-	cfg, err := LoadConfig(startupLogger)
+	cfg, err := config.LoadConfig(startupLogger)
 	if err != nil {
 		startupLogger.Fatal("failed to parse config", zap.Error(err))
 	}
 
 	logger := logging.NewLogger(&cfg.Logger, "owl_shop")
 
-	shopSvc, err := shop.New(cfg.Shop, logger)
+	shopSvc, err := shop.New(cfg, logger)
 	if err != nil {
 		logger.Fatal("failed to initialize shop", zap.Error(err))
 	}

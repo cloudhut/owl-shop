@@ -39,6 +39,7 @@ require (
 	github.com/prometheus/client_model v0.3.0 // indirect
 	github.com/prometheus/common v0.39.0 // indirect
 	github.com/prometheus/procfs v0.9.0 // indirect
+	github.com/twmb/franz-go/plugin/kzap v1.1.1 // indirect
 	github.com/twmb/tlscfg v1.2.0 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect

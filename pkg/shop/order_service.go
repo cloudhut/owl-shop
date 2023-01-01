@@ -12,34 +12,41 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/cloudhut/owl-shop/pkg/config"
 	"github.com/cloudhut/owl-shop/pkg/fake"
 	"github.com/cloudhut/owl-shop/pkg/kafka"
 )
 
 type OrderService struct {
-	cfg            Config
-	logger         *zap.Logger
-	kafkaSvc       *kafka.Service
+	cfg    config.Shop
+	logger *zap.Logger
+
+	kafkaFactory   *kafka.Factory
 	consumerClient *kgo.Client
+	metaClient     *kgo.Client
 
 	bufferSize        int
 	recentCustomersMu sync.RWMutex
 	recentCustomers   []fake.Customer
 
-	clientID          string
 	topicName         string
 	topicNameProtobuf string
 }
 
-func NewOrderService(cfg Config, logger *zap.Logger) (*OrderService, error) {
+func NewOrderService(
+	cfg config.Shop,
+	logger *zap.Logger,
+	kafkaFactory *kafka.Factory,
+) (*OrderService, error) {
 	clientID := cfg.GlobalPrefix + "order-service"
-	cfg.Kafka.ClientID = clientID
-	kafkaSvc, err := kafka.NewService(cfg.Kafka, logger)
+
+	metaClient, err := kafkaFactory.NewKafkaClient(clientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kafka service: %w", err)
 	}
 
-	consumerClient, err := kafkaSvc.NewKafkaClient(
+	consumerClient, err := kafkaFactory.NewKafkaClient(
+		clientID,
 		kgo.ConsumerGroup(clientID),
 		kgo.ConsumeTopics(cfg.GlobalPrefix+"customers"),
 		kgo.AutoCommitInterval(500*time.Millisecond),
@@ -53,16 +60,17 @@ func NewOrderService(cfg Config, logger *zap.Logger) (*OrderService, error) {
 	recentCustomers := make([]fake.Customer, 0, bufferSize)
 
 	return &OrderService{
-		cfg:            cfg,
-		logger:         logger.With(zap.String("service", "order_service")),
-		kafkaSvc:       kafkaSvc,
+		cfg:    cfg,
+		logger: logger.With(zap.String("service", "order_service")),
+
+		kafkaFactory:   kafkaFactory,
 		consumerClient: consumerClient,
+		metaClient:     metaClient,
 
 		bufferSize:        bufferSize,
 		recentCustomersMu: sync.RWMutex{},
 		recentCustomers:   recentCustomers,
 
-		clientID:          clientID,
 		topicName:         cfg.GlobalPrefix + "orders",
 		topicNameProtobuf: cfg.GlobalPrefix + "orders" + "-protobuf",
 	}, nil
@@ -107,20 +115,22 @@ func (svc *OrderService) Initialize(ctx context.Context) error {
 	topicCfg := map[string]*string{
 		"cleanup.policy": kadm.StringPtr("compact"),
 	}
-	err := svc.kafkaSvc.ReconcileTopic(ctx,
+	err := kafka.ReconcileTopic(ctx,
+		svc.metaClient,
 		svc.topicName,
-		svc.cfg.Kafka.TopicPartitionCount,
-		svc.cfg.Kafka.TopicReplicationFactor,
+		svc.cfg.TopicPartitionCount,
+		svc.cfg.TopicReplicationFactor,
 		topicCfg,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create topic: %w", err)
 	}
 
-	err = svc.kafkaSvc.ReconcileTopic(ctx,
+	err = kafka.ReconcileTopic(ctx,
+		svc.metaClient,
 		svc.topicNameProtobuf,
-		svc.cfg.Kafka.TopicPartitionCount,
-		svc.cfg.Kafka.TopicReplicationFactor,
+		svc.cfg.TopicPartitionCount,
+		svc.cfg.TopicReplicationFactor,
 		topicCfg,
 	)
 	if err != nil {
@@ -153,7 +163,7 @@ func (svc *OrderService) CreateOrder() {
 }
 
 func (svc *OrderService) produceOrderJSON(order fake.Order) error {
-	serialized, err := kafka.SerializeJson(order)
+	serialized, err := json.Marshal(order)
 	if err != nil {
 		return fmt.Errorf("failed to serialize customer struct: %w", err)
 	}
@@ -166,7 +176,7 @@ func (svc *OrderService) produceOrderJSON(order fake.Order) error {
 		Topic:     svc.topicName,
 	}
 
-	svc.kafkaSvc.KafkaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {
+	svc.metaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {
 		if err != nil {
 			svc.logger.Error("failed to produce record",
 				zap.String("topic_name", rec.Topic),
@@ -197,7 +207,7 @@ func (svc *OrderService) produceOrderProtobuf(order fake.Order) error {
 		Topic:     svc.topicNameProtobuf,
 	}
 
-	svc.kafkaSvc.KafkaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {
+	svc.metaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {
 		if err != nil {
 			svc.logger.Error("failed to produce record",
 				zap.String("topic_name", rec.Topic),

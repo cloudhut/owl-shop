@@ -1,7 +1,6 @@
-package kafka
+package config
 
 import (
-	"flag"
 	"fmt"
 )
 
@@ -13,8 +12,8 @@ const (
 	SASLMechanismOAuthBearer = "OAUTHBEARER"
 )
 
-// SASLConfig for Kafka client
-type SASLConfig struct {
+// SASL config for Kafka client
+type SASL struct {
 	Enabled      bool             `yaml:"enabled"`
 	Username     string           `yaml:"username"`
 	Password     string           `yaml:"password"`
@@ -22,19 +21,13 @@ type SASLConfig struct {
 	GSSAPIConfig SASLGSSAPIConfig `yaml:"gssapi"`
 }
 
-// RegisterFlags for all sensitive Kafka SASL configs.
-func (c *SASLConfig) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&c.Password, "shop.kafka.sasl.password", "", "SASL password")
-	c.GSSAPIConfig.RegisterFlags(f)
-}
-
 // SetDefaults for SASL Config
-func (c *SASLConfig) SetDefaults() {
+func (c *SASL) SetDefaults() {
 	c.Mechanism = SASLMechanismPlain
 }
 
 // Validate SASL config input
-func (c *SASLConfig) Validate() error {
+func (c *SASL) Validate() error {
 	switch c.Mechanism {
 	case SASLMechanismPlain, SASLMechanismScramSHA256, SASLMechanismScramSHA512, SASLMechanismGSSAPI:
 		// Valid and supported

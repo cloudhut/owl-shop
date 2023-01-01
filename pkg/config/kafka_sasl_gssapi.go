@@ -1,8 +1,4 @@
-package kafka
-
-import (
-	"flag"
-)
+package config
 
 // SASLGSSAPIConfig represents the Kafka Kerberos config
 type SASLGSSAPIConfig struct {
@@ -13,9 +9,4 @@ type SASLGSSAPIConfig struct {
 	Username           string `yaml:"username"`
 	Password           string `yaml:"password"`
 	Realm              string `yaml:"realm"`
-}
-
-// RegisterFlags registers all sensitive Kerberos settings as flag
-func (c *SASLGSSAPIConfig) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&c.Password, "shop.kafka.sasl.gssapi.password", "", "Kerberos password if auth type user auth is used")
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/zap"
 
+	"github.com/cloudhut/owl-shop/pkg/config"
 	"github.com/cloudhut/owl-shop/pkg/fake"
 	"github.com/cloudhut/owl-shop/pkg/kafka"
 )
@@ -18,9 +19,11 @@ import (
 // AddressService consumes the customers topic to collect customer ID and name
 // and then produces fake addresses for that customer.
 type AddressService struct {
-	cfg            Config
-	logger         *zap.Logger
-	kafkaSvc       *kafka.Service
+	cfg          config.Shop
+	logger       *zap.Logger
+	kafkaFactory *kafka.Factory
+
+	metaClient     *kgo.Client
 	consumerClient *kgo.Client
 
 	bufferSize       int
@@ -33,16 +36,15 @@ type AddressService struct {
 
 // NewAddressService creates the service that publishes addresses to the
 // address topic.
-func NewAddressService(cfg Config, logger *zap.Logger) (*AddressService, error) {
+func NewAddressService(
+	cfg config.Shop,
+	logger *zap.Logger,
+	kafkaFactory *kafka.Factory,
+) (*AddressService, error) {
 	clientID := cfg.GlobalPrefix + "address-service"
-	cfg.Kafka.ClientID = clientID
-	kafkaSvc, err := kafka.NewService(cfg.Kafka, logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create kafka service: %w", err)
-	}
-
 	topicName := cfg.GlobalPrefix + "addresses"
-	consumerClient, err := kafkaSvc.NewKafkaClient(
+	consumerClient, err := kafkaFactory.NewKafkaClient(
+		clientID,
 		kgo.ConsumeTopics(topicName),
 		kgo.ConsumerGroup(clientID),
 		kgo.AutoCommitInterval(500*time.Millisecond),
@@ -51,15 +53,22 @@ func NewAddressService(cfg Config, logger *zap.Logger) (*AddressService, error) 
 		return nil, fmt.Errorf("failed to create consumer client: %w", err)
 	}
 
+	metaClient, err := kafkaFactory.NewKafkaClient(clientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create meta client: %w", err)
+	}
+
 	// This slice is used to keep some customers in the buffer so that we can produce addresses for these customers
 	bufferSize := 500
 	recentCustomers := make([]fake.Customer, 0, bufferSize)
 
 	return &AddressService{
-		cfg:            cfg,
-		logger:         logger.With(zap.String("service", "address_service")),
-		kafkaSvc:       kafkaSvc,
+		cfg:          cfg,
+		logger:       logger.With(zap.String("service", "address_service")),
+		kafkaFactory: kafkaFactory,
+
 		consumerClient: consumerClient,
+		metaClient:     metaClient,
 
 		bufferSize:       bufferSize,
 		recentCustomerMu: sync.RWMutex{},
@@ -74,10 +83,11 @@ func NewAddressService(cfg Config, logger *zap.Logger) (*AddressService, error) 
 func (svc *AddressService) Initialize(ctx context.Context) error {
 	svc.logger.Info("initializing address service")
 
-	err := svc.kafkaSvc.ReconcileTopic(ctx,
+	err := kafka.ReconcileTopic(ctx,
+		svc.metaClient,
 		svc.topicName,
-		svc.cfg.Kafka.TopicPartitionCount,
-		svc.cfg.Kafka.TopicReplicationFactor,
+		svc.cfg.TopicPartitionCount,
+		svc.cfg.TopicReplicationFactor,
 		map[string]*string{
 			"cleanup.policy": kadm.StringPtr("compact"),
 		},
@@ -150,7 +160,7 @@ func (svc *AddressService) CreateAddress() {
 }
 
 func (svc *AddressService) produceAddress(address fake.Address) error {
-	serialized, err := kafka.SerializeJson(address)
+	serialized, err := json.Marshal(address)
 	if err != nil {
 		return fmt.Errorf("failed to serialize customer struct: %w", err)
 	}
@@ -162,7 +172,7 @@ func (svc *AddressService) produceAddress(address fake.Address) error {
 		Topic:   svc.topicName,
 	}
 
-	svc.kafkaSvc.KafkaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {
+	svc.metaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {
 		if err == nil {
 			return
 		}

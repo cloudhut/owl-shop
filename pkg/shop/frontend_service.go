@@ -2,6 +2,7 @@ package shop
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -9,30 +10,38 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/zap"
 
+	"github.com/cloudhut/owl-shop/pkg/config"
 	"github.com/cloudhut/owl-shop/pkg/fake"
 	"github.com/cloudhut/owl-shop/pkg/kafka"
 )
 
 type FrontendService struct {
-	cfg      Config
-	logger   *zap.Logger
-	kafkaSvc *kafka.Service
+	cfg    config.Shop
+	logger *zap.Logger
 
-	clientID  string
+	kafkaFactory *kafka.Factory
+	metaClient   *kgo.Client
+
 	topicName string
 }
 
-func NewFrontendService(cfg Config, logger *zap.Logger) (*FrontendService, error) {
-	cfg.Kafka.ClientID = cfg.GlobalPrefix + "frontend-service"
-	kafkaSvc, err := kafka.NewService(cfg.Kafka, logger)
+func NewFrontendService(
+	cfg config.Shop,
+	logger *zap.Logger,
+	kafkaFactory *kafka.Factory,
+) (*FrontendService, error) {
+	clientID := cfg.GlobalPrefix + "frontend-service"
+	metaClient, err := kafkaFactory.NewKafkaClient(clientID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create kafka service: %w", err)
+		return nil, fmt.Errorf("failed to create Kafka client: %w", err)
 	}
 
 	return &FrontendService{
-		cfg:      cfg,
-		logger:   logger.With(zap.String("service", "frontend_service")),
-		kafkaSvc: kafkaSvc,
+		cfg:    cfg,
+		logger: logger.With(zap.String("service", "frontend_service")),
+
+		kafkaFactory: kafkaFactory,
+		metaClient:   metaClient,
 
 		topicName: cfg.GlobalPrefix + "frontend-events",
 	}, nil
@@ -40,11 +49,12 @@ func NewFrontendService(cfg Config, logger *zap.Logger) (*FrontendService, error
 
 func (svc *FrontendService) Initialize(ctx context.Context) error {
 	svc.logger.Info("initializing customer service")
-	err := svc.kafkaSvc.ReconcileTopic(
+	err := kafka.ReconcileTopic(
 		ctx,
+		svc.metaClient,
 		svc.topicName,
-		svc.cfg.Kafka.TopicPartitionCount,
-		svc.cfg.Kafka.TopicReplicationFactor,
+		svc.cfg.TopicPartitionCount,
+		svc.cfg.TopicReplicationFactor,
 		map[string]*string{
 			"cleanup.policy":  kadm.StringPtr("delete"),
 			"retention.bytes": kadm.StringPtr("3221225472"), // 3GiB
@@ -70,7 +80,7 @@ func (svc *FrontendService) CreateFrontendEvent() {
 }
 
 func (svc *FrontendService) produceFrontendEvent(event fake.FrontendEvent) error {
-	serialized, err := kafka.SerializeJson(event)
+	serialized, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("failed to serialize event struct: %w", err)
 	}
@@ -83,7 +93,7 @@ func (svc *FrontendService) produceFrontendEvent(event fake.FrontendEvent) error
 		Topic:     svc.topicName,
 	}
 
-	svc.kafkaSvc.KafkaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {
+	svc.metaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {
 		if err != nil {
 			svc.logger.Error("failed to produce record",
 				zap.String("topic_name", rec.Topic),

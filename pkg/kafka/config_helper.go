@@ -15,26 +15,23 @@ import (
 	"github.com/twmb/franz-go/pkg/sasl/kerberos"
 	"github.com/twmb/franz-go/pkg/sasl/plain"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
+	"github.com/twmb/franz-go/plugin/kzap"
 	"github.com/twmb/tlscfg"
 	"go.uber.org/zap"
+
+	"github.com/cloudhut/owl-shop/pkg/config"
 )
 
 // NewKgoConfig creates a new Config for the Kafka Client as exposed by the franz-go library.
 // If TLS certificates can't be read an error will be returned.
-func NewKgoConfig(cfg *Config, logger *zap.Logger) ([]kgo.Opt, error) {
+func NewKgoConfig(cfg *config.Kafka, logger *zap.Logger) ([]kgo.Opt, error) {
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(cfg.Brokers...),
 		kgo.MaxVersions(kversion.V2_6_0()),
 		kgo.RecordDeliveryTimeout(10 * time.Second),
-		kgo.ClientID(cfg.ClientID),
 		kgo.RequiredAcks(kgo.AllISRAcks()),
+		kgo.WithLogger(kzap.New(logger)),
 	}
-
-	// Create Logger
-	kgoLogger := KgoZapLogger{
-		logger: logger.With(zap.String("source", "kafka_client")).Sugar(),
-	}
-	opts = append(opts, kgo.WithLogger(kgoLogger))
 
 	// Configure SASL
 	if cfg.SASL.Enabled {

@@ -2,6 +2,7 @@ package shop
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -11,14 +12,17 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/zap"
 
+	"github.com/cloudhut/owl-shop/pkg/config"
 	"github.com/cloudhut/owl-shop/pkg/fake"
 	"github.com/cloudhut/owl-shop/pkg/kafka"
 )
 
 type CustomerService struct {
-	cfg      Config
-	logger   *zap.Logger
-	kafkaSvc *kafka.Service
+	cfg    config.Shop
+	logger *zap.Logger
+
+	kafkaFactory *kafka.Factory
+	metaClient   *kgo.Client
 
 	bufferSize        int
 	recentCustomersMu sync.RWMutex
@@ -27,11 +31,15 @@ type CustomerService struct {
 	topicName string
 }
 
-func NewCustomerService(cfg Config, logger *zap.Logger) (*CustomerService, error) {
-	cfg.Kafka.ClientID = cfg.GlobalPrefix + "customer-service"
-	kafkaSvc, err := kafka.NewService(cfg.Kafka, logger)
+func NewCustomerService(
+	cfg config.Shop,
+	logger *zap.Logger,
+	kafkaFactory *kafka.Factory,
+) (*CustomerService, error) {
+	clientID := cfg.GlobalPrefix + "customer-service"
+	metaClient, err := kafkaFactory.NewKafkaClient(clientID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create kafka service: %w", err)
+		return nil, fmt.Errorf("failed to create kafka client: %w", err)
 	}
 
 	// This slice is used to keep some customers in the buffer so that they can be modified or deleted
@@ -39,9 +47,11 @@ func NewCustomerService(cfg Config, logger *zap.Logger) (*CustomerService, error
 	recentCustomers := make([]fake.Customer, 0, bufferSize)
 
 	return &CustomerService{
-		cfg:      cfg,
-		logger:   logger.With(zap.String("service", "customer_service")),
-		kafkaSvc: kafkaSvc,
+		cfg:    cfg,
+		logger: logger.With(zap.String("service", "customer_service")),
+
+		kafkaFactory: kafkaFactory,
+		metaClient:   metaClient,
 
 		bufferSize:        bufferSize,
 		recentCustomersMu: sync.RWMutex{},
@@ -54,11 +64,12 @@ func NewCustomerService(cfg Config, logger *zap.Logger) (*CustomerService, error
 func (svc *CustomerService) Initialize(ctx context.Context) error {
 	svc.logger.Info("initializing customer service")
 
-	err := svc.kafkaSvc.ReconcileTopic(
+	err := kafka.ReconcileTopic(
 		ctx,
+		svc.metaClient,
 		svc.topicName,
-		svc.cfg.Kafka.TopicPartitionCount,
-		svc.cfg.Kafka.TopicReplicationFactor,
+		svc.cfg.TopicPartitionCount,
+		svc.cfg.TopicReplicationFactor,
 		map[string]*string{
 			"cleanup.policy": kadm.StringPtr("compact"),
 		},
@@ -154,7 +165,7 @@ func (svc *CustomerService) produceTombstone(customerID string) {
 		Topic:     svc.topicName,
 	}
 
-	svc.kafkaSvc.KafkaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {
+	svc.metaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {
 		if err != nil {
 			svc.logger.Error("failed to produce tombstone record",
 				zap.String("topic_name", rec.Topic),
@@ -166,7 +177,7 @@ func (svc *CustomerService) produceTombstone(customerID string) {
 }
 
 func (svc *CustomerService) produceCustomer(customer fake.Customer) error {
-	serialized, err := kafka.SerializeJson(customer)
+	serialized, err := json.Marshal(customer)
 	if err != nil {
 		return fmt.Errorf("failed to serialize customer struct: %w", err)
 	}
@@ -179,7 +190,7 @@ func (svc *CustomerService) produceCustomer(customer fake.Customer) error {
 		Topic:     svc.topicName,
 	}
 
-	svc.kafkaSvc.KafkaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {
+	svc.metaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {
 		if err != nil {
 			svc.logger.Error("failed to produce record",
 				zap.String("topic_name", rec.Topic),

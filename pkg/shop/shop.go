@@ -9,10 +9,13 @@ import (
 	"github.com/mroth/weightedrand"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
+
+	"github.com/cloudhut/owl-shop/pkg/config"
+	"github.com/cloudhut/owl-shop/pkg/kafka"
 )
 
 type Shop struct {
-	cfg    Config
+	cfg    config.Config
 	logger *zap.Logger
 
 	chooser *weightedrand.Chooser
@@ -21,23 +24,25 @@ type Shop struct {
 	customerSvc *CustomerService
 }
 
-func New(cfg Config, logger *zap.Logger) (*Shop, error) {
-	customerSvc, err := NewCustomerService(cfg, logger)
+func New(cfg config.Config, logger *zap.Logger) (*Shop, error) {
+	kafkaFactory := kafka.NewFactory(cfg.Kafka, logger.Named("kafka_client"))
+
+	customerSvc, err := NewCustomerService(cfg.Shop, logger, kafkaFactory)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create customer service: %w", err)
 	}
 
-	addressSvc, err := NewAddressService(cfg, logger)
+	addressSvc, err := NewAddressService(cfg.Shop, logger, kafkaFactory)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create address service: %w", err)
 	}
 
-	frontendSvc, err := NewFrontendService(cfg, logger)
+	frontendSvc, err := NewFrontendService(cfg.Shop, logger, kafkaFactory)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create frontend service: %w", err)
 	}
 
-	orderSvc, err := NewOrderService(cfg, logger)
+	orderSvc, err := NewOrderService(cfg.Shop, logger, kafkaFactory)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create order service: %w", err)
 	}
@@ -101,11 +106,11 @@ func (s *Shop) Start() error {
 	}()
 
 	for {
-		for i := 0; i < s.cfg.Traffic.Interval.Rate; i++ {
+		for i := 0; i < s.cfg.Shop.RequestRate; i++ {
 			pageImpressionsSimulated.Inc()
 			s.SimulatePageImpression()
 		}
-		time.Sleep(s.cfg.Traffic.Interval.Duration)
+		time.Sleep(s.cfg.Shop.RequestRateInterval)
 	}
 }
 

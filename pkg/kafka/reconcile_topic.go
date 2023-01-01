@@ -4,24 +4,27 @@ import (
 	"context"
 	"fmt"
 
-	"go.uber.org/zap"
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 // ReconcileTopic ensures a topic with the given parameters exist in the target cluster.
-func (s *Service) ReconcileTopic(
+func ReconcileTopic(
 	ctx context.Context,
+	kafkaClient *kgo.Client,
 	topicName string,
 	partitions int32,
 	replicationFactor int16,
 	configs map[string]*string,
 ) error {
-	topicDetails, err := s.KafkaAdminClient.ListTopics(ctx, topicName)
+	adminClient := kadm.NewClient(kafkaClient)
+	topicDetails, err := adminClient.ListTopics(ctx, topicName)
 	if err != nil {
 		return fmt.Errorf("failed to get metadata to check if topic exists: %w", err)
 	}
 
 	if !topicDetails.Has(topicName) {
-		createTopicsRes, err := s.KafkaAdminClient.CreateTopics(
+		createTopicsRes, err := adminClient.CreateTopics(
 			ctx,
 			partitions,
 			replicationFactor,
@@ -38,7 +41,6 @@ func (s *Service) ReconcileTopic(
 		if topicRes.Err != nil {
 			return fmt.Errorf("failed to create topic: %w", topicRes.Err)
 		}
-		s.Logger.Info("successfully created topic", zap.String("topic_name", topicRes.Topic))
 	}
 
 	// TODO: Check if Kafka topic config matches
