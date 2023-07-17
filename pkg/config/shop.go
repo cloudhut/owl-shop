@@ -1,6 +1,9 @@
 package config
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // Shop is the configuration for the virtual shop that emits Kafka records
 // upon simulated page impressions.
@@ -24,10 +27,32 @@ type Shop struct {
 	TopicPartitionCount int32 `yaml:"topicPartitionCount"`
 }
 
+// SetDefaults for shop config.
 func (c *Shop) SetDefaults() {
 	c.GlobalPrefix = "owlshop-"
+	c.RequestRate = 2
+	c.RequestRateInterval = time.Second
+	c.TopicReplicationFactor = -1
+	c.TopicPartitionCount = 1
 }
 
+// Validate shop configuration.
 func (c *Shop) Validate() error {
+	if c.RequestRate <= 0 {
+		return fmt.Errorf("request rate must be a positive integer")
+	}
+
+	if c.RequestRateInterval == 0 {
+		return fmt.Errorf("request rate must be a valid duration (e.g. '1s')")
+	}
+
+	if c.TopicReplicationFactor < -1 || c.TopicReplicationFactor == 0 {
+		return fmt.Errorf("replication factor must be a positive integer or '-1' for using default replication factor")
+	}
+
+	if c.TopicPartitionCount < -1 || c.TopicPartitionCount == 0 {
+		return fmt.Errorf("partition count must be a positive integer or '-1' for using the default partition count")
+	}
+
 	return nil
 }

@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/cloudhut/common/logging"
 	"github.com/knadh/koanf"
@@ -72,7 +71,9 @@ func LoadConfig(logger *zap.Logger) (Config, error) {
 		FlatPaths: false,
 		DecoderConfig: &mapstructure.DecoderConfig{
 			DecodeHook: mapstructure.ComposeDecodeHookFunc(
-				mapstructure.StringToTimeDurationHookFunc()),
+				mapstructure.StringToTimeDurationHookFunc(),
+				mapstructure.StringToSliceHookFunc(","),
+			),
 			Metadata:         nil,
 			Result:           &cfg,
 			WeaklyTypedInput: true,
@@ -85,17 +86,7 @@ func LoadConfig(logger *zap.Logger) (Config, error) {
 		return Config{}, fmt.Errorf("failed to unmarshal YAML config into config struct: %w", err)
 	}
 
-	err = k.Load(env.ProviderWithValue("", ".", func(s string, v string) (string, interface{}) {
-		key := strings.Replace(strings.ToLower(s), "_", ".", -1)
-		// Check to exist if we have a configuration option already and see if it's a slice
-		// If there is a comma in the value, split the value into a slice by the comma.
-		if strings.Contains(v, ",") {
-			return key, strings.Split(v, ",")
-		}
-
-		// Otherwise return the new key with the unaltered value
-		return key, v
-	}), nil)
+	err = k.Load(env.Provider("", "_", nil), nil)
 	if err != nil {
 		return Config{}, fmt.Errorf("failed to unmarshal environment variables into config struct: %w", err)
 	}
