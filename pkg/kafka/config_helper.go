@@ -3,14 +3,12 @@ package kafka
 import (
 	"crypto/tls"
 	"fmt"
-	"net"
 	"time"
 
 	"github.com/jcmturner/gokrb5/v8/client"
 	krbconfig "github.com/jcmturner/gokrb5/v8/config"
 	"github.com/jcmturner/gokrb5/v8/keytab"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/kversion"
 	"github.com/twmb/franz-go/pkg/sasl"
 	"github.com/twmb/franz-go/pkg/sasl/kerberos"
 	"github.com/twmb/franz-go/pkg/sasl/plain"
@@ -27,9 +25,7 @@ import (
 func NewKgoConfig(cfg *config.Kafka, logger *zap.Logger) ([]kgo.Opt, error) {
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(cfg.Brokers...),
-		kgo.MaxVersions(kversion.V2_6_0()),
 		kgo.RecordDeliveryTimeout(10 * time.Second),
-		kgo.RequiredAcks(kgo.AllISRAcks()),
 		kgo.WithLogger(kzap.New(logger)),
 	}
 
@@ -111,11 +107,7 @@ func NewKgoConfig(cfg *config.Kafka, logger *zap.Logger) ([]kgo.Opt, error) {
 			return nil, fmt.Errorf("failed to create tls config: %w", err)
 		}
 
-		tlsDialer := &tls.Dialer{
-			NetDialer: &net.Dialer{Timeout: 10 * time.Second},
-			Config:    tlsCfg,
-		}
-		opts = append(opts, kgo.Dialer(tlsDialer.DialContext))
+		opts = append(opts, kgo.DialTLSConfig(tlsCfg))
 	}
 
 	return opts, nil
