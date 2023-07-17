@@ -1,9 +1,6 @@
 package main
 
 import (
-	"math/rand"
-	"time"
-
 	"github.com/cloudhut/common/logging"
 	"go.uber.org/zap"
 
@@ -12,9 +9,6 @@ import (
 )
 
 func main() {
-	// Initialize seed for fake service
-	rand.Seed(time.Now().UTC().UnixNano())
-
 	startupLogger := zap.NewExample()
 	cfg, err := config.LoadConfig(startupLogger)
 	if err != nil {
