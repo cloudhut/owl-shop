@@ -17,6 +17,11 @@ import (
 	"github.com/cloudhut/owl-shop/pkg/kafka"
 )
 
+// CustomerService emulates a service that produces a new Kafka record onto
+// its topic every time a new user registers in the fake store. It produces to
+// a compacted topic and regularly produces an updated version of an existing
+// customer to simulate a change event. It also sends a tombstone for existing
+// customers to simulate a delete request by a customer.
 type CustomerService struct {
 	cfg    config.Shop
 	logger *zap.Logger
@@ -31,6 +36,7 @@ type CustomerService struct {
 	topicName string
 }
 
+// NewCustomerService creates a new CustomerService.
 func NewCustomerService(
 	cfg config.Shop,
 	logger *zap.Logger,
@@ -61,6 +67,7 @@ func NewCustomerService(
 	}, nil
 }
 
+// Initialize creates the customer topic with cleanup policy compact.
 func (svc *CustomerService) Initialize(ctx context.Context) error {
 	svc.logger.Info("initializing customer service")
 
@@ -84,7 +91,7 @@ func (svc *CustomerService) Initialize(ctx context.Context) error {
 }
 
 // CreateCustomer creates a fake customer struct and then produces the JSON serialized
-// customer to the customers topic.
+// customer to the customer's topic.
 func (svc *CustomerService) CreateCustomer() {
 	customer := fake.NewCustomer()
 	svc.recentCustomersMu.Lock()
@@ -103,7 +110,7 @@ func (svc *CustomerService) CreateCustomer() {
 }
 
 // ModifyCustomer takes an existing customer from the cache, modifies the last name
-// and sends the updated customer version to the customers topic.
+// and sends the updated customer version to the customer's topic.
 func (svc *CustomerService) ModifyCustomer() {
 	customer, err := svc.popCustomerFromBuffer()
 	if err != nil {

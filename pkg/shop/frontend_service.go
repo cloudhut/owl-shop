@@ -15,6 +15,9 @@ import (
 	"github.com/cloudhut/owl-shop/pkg/kafka"
 )
 
+// FrontendService simulates a service that produces a Kafka message every
+// time someone makes a request to the fake shop. Therefore, it is a
+// high throughput topic relative to the other topics.
 type FrontendService struct {
 	cfg    config.Shop
 	logger *zap.Logger
@@ -25,6 +28,7 @@ type FrontendService struct {
 	topicName string
 }
 
+// NewFrontendService creates a new FrontendService.
 func NewFrontendService(
 	cfg config.Shop,
 	logger *zap.Logger,

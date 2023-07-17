@@ -17,6 +17,11 @@ import (
 	"github.com/cloudhut/owl-shop/pkg/kafka"
 )
 
+// OrderService is the service that is in charge of handling incoming orders.
+// When a new customer order is received this service will produce a message
+// on the order topics in different formats (JSON and Protobuf).
+// Because orders belong to a customer, this service also consumes the customers
+// topic
 type OrderService struct {
 	cfg    config.Shop
 	logger *zap.Logger
@@ -33,6 +38,7 @@ type OrderService struct {
 	topicNameProtobuf string
 }
 
+// NewOrderService creates a new OrderService.
 func NewOrderService(
 	cfg config.Shop,
 	logger *zap.Logger,
@@ -76,6 +82,7 @@ func NewOrderService(
 	}, nil
 }
 
+// Start starts polling for new messages on the customers topic.
 func (svc *OrderService) Start() {
 	for {
 		fetches := svc.consumerClient.PollFetches(context.Background())
@@ -109,6 +116,7 @@ func (svc *OrderService) Start() {
 	}
 }
 
+// Initialize order service by reconciling all order topics.
 func (svc *OrderService) Initialize(ctx context.Context) error {
 	svc.logger.Info("initializing order service")
 
@@ -140,6 +148,9 @@ func (svc *OrderService) Initialize(ctx context.Context) error {
 	return nil
 }
 
+// CreateOrder creates a new fake order message. It pops a previously produced
+// fake customer from the in-memory cache so that an existing customer can be
+// referenced in the order message.
 func (svc *OrderService) CreateOrder() {
 	customer, err := svc.popCustomerFromBuffer()
 	if err != nil {
