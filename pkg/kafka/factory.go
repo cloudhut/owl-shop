@@ -30,7 +30,7 @@ func (s *Factory) NewKafkaClient(
 	clientID string,
 	additionalOpts ...kgo.Opt,
 ) (*kgo.Client, error) {
-	kgoOpts, err := NewKgoConfig(&s.Config, s.Logger)
+	kgoOpts, err := NewKgoConfig(&s.Config, s.Logger.Named(clientID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create a valid kafka client config: %w", err)
 	}

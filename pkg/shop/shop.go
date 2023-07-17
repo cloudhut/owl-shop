@@ -32,17 +32,17 @@ func New(cfg config.Config, logger *zap.Logger) (*Shop, error) {
 		return nil, fmt.Errorf("failed to create customer service: %w", err)
 	}
 
-	addressSvc, err := NewAddressService(cfg.Shop, logger, kafkaFactory)
+	addressSvc, err := NewAddressService(cfg.Shop, logger.Named("address_svc"), kafkaFactory)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create address service: %w", err)
 	}
 
-	frontendSvc, err := NewFrontendService(cfg.Shop, logger, kafkaFactory)
+	frontendSvc, err := NewFrontendService(cfg.Shop, logger.Named("frontend_svc"), kafkaFactory)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create frontend service: %w", err)
 	}
 
-	orderSvc, err := NewOrderService(cfg.Shop, logger, kafkaFactory)
+	orderSvc, err := NewOrderService(cfg.Shop, logger.Named("order_svc"), kafkaFactory)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create order service: %w", err)
 	}
