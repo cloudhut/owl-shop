@@ -1,13 +1,15 @@
 package fake
 
 import (
-	"github.com/brianvoe/gofakeit/v5"
-	"github.com/cloudhut/owl-shop/pkg/protobuf"
-	"github.com/mroth/weightedrand"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	"math/rand"
 	"strconv"
 	"time"
+
+	"github.com/brianvoe/gofakeit/v5"
+	"github.com/mroth/weightedrand"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	shoppb "github.com/cloudhut/owl-shop/pkg/protogen/shop/v1"
 )
 
 type AddressType string
@@ -70,8 +72,8 @@ type Address struct {
 	Revision              int         `json:"revision"` // Each change on the customer increments the revision
 }
 
-func (a *Address) Protobuf() *protobuf.Address {
-	return &protobuf.Address{
+func (a *Address) Protobuf() *shoppb.Address {
+	return &shoppb.Address{
 		Version:               int32(a.Version),
 		Id:                    a.ID,
 		Customer:              a.Customer.Protobuf(),
@@ -96,8 +98,8 @@ type AddressCustomer struct {
 	CustomerType CustomerType `json:"type"`
 }
 
-func (a *AddressCustomer) Protobuf() *protobuf.Address_Customer {
-	return &protobuf.Address_Customer{
+func (a *AddressCustomer) Protobuf() *shoppb.Address_Customer {
+	return &shoppb.Address_Customer{
 		CustomerId:   a.CustomerID,
 		CustomerType: string(a.CustomerType),
 	}

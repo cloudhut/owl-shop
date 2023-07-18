@@ -1,10 +1,12 @@
 package fake
 
 import (
-	"github.com/brianvoe/gofakeit/v5"
-	"github.com/cloudhut/owl-shop/pkg/protobuf"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	"time"
+
+	"github.com/brianvoe/gofakeit/v5"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	shoppb "github.com/cloudhut/owl-shop/pkg/protogen/shop/v1"
 )
 
 func NewOrder(customer Customer) Order {
@@ -45,19 +47,19 @@ type Order struct {
 	Revision        int             `json:"revision"`
 }
 
-func (o *Order) Protobuf() *protobuf.Order {
-	lineItems := make([]*protobuf.Order_LineItem, len(o.LineItems))
+func (o *Order) Protobuf() *shoppb.Order {
+	lineItems := make([]*shoppb.Order_LineItem, len(o.LineItems))
 	for i, item := range o.LineItems {
 		lineItems[i] = item.Protobuf()
 	}
 
-	order := protobuf.Order{
+	order := shoppb.Order{
 		Version:         int32(o.Version),
 		Id:              o.ID,
 		CreatedAt:       timestamppb.New(o.CreatedAt),
 		LastUpdatedAt:   timestamppb.New(o.LastUpdatedAt),
-		DeliveredAt:     protobuf.NewTimestamp(o.DeliveredAt),
-		CompletedAt:     protobuf.NewTimestamp(o.CompletedAt),
+		DeliveredAt:     newProtoTimestampFromTimePtr(o.DeliveredAt),
+		CompletedAt:     newProtoTimestampFromTimePtr(o.CompletedAt),
 		Customer:        o.Customer.Protobuf(),
 		OrderValue:      int32(o.OrderValue),
 		LineItems:       lineItems,
@@ -101,8 +103,8 @@ type OrderLineItem struct {
 	TotalPrice   int    `json:"totalPrice"`
 }
 
-func (o *OrderLineItem) Protobuf() *protobuf.Order_LineItem {
-	return &protobuf.Order_LineItem{
+func (o *OrderLineItem) Protobuf() *shoppb.Order_LineItem {
+	return &shoppb.Order_LineItem{
 		ArticleId:    o.ArticleID,
 		Name:         o.Name,
 		Quantity:     int32(o.Quantity),
@@ -117,8 +119,8 @@ type OrderPayment struct {
 	Method    string `json:"method"` // PAYPAL | CREDIT_CARD | DEBIT | CASH
 }
 
-func (o *OrderPayment) Protobuf() *protobuf.Order_Payment {
-	return &protobuf.Order_Payment{
+func (o *OrderPayment) Protobuf() *shoppb.Order_Payment {
+	return &shoppb.Order_Payment{
 		PaymentId: o.PaymentID,
 		Method:    o.Method,
 	}

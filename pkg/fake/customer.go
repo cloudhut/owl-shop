@@ -2,8 +2,9 @@ package fake
 
 import (
 	"github.com/brianvoe/gofakeit/v5"
-	"github.com/cloudhut/owl-shop/pkg/protobuf"
 	"github.com/mroth/weightedrand"
+
+	shoppb "github.com/cloudhut/owl-shop/pkg/protogen/shop/v1"
 )
 
 type CustomerType string
@@ -27,18 +28,18 @@ type Customer struct {
 	Revision     int          `json:"revision"`     // Each change on the customer increments the revision
 }
 
-func (c *Customer) Protobuf() *protobuf.Customer {
+func (c *Customer) Protobuf() *shoppb.Customer {
 	companyName := ""
 	if c.CompanyName != nil {
 		companyName = *c.CompanyName
 	}
 
-	customerType := protobuf.Customer_PERSONAL
+	customerType := shoppb.Customer_CUSTOMER_TYPE_PERSONAL
 	if c.CustomerType == CustomerTypeBusiness {
-		customerType = protobuf.Customer_BUSINESS
+		customerType = shoppb.Customer_CUSTOMER_TYPE_BUSINESS
 	}
 
-	return &protobuf.Customer{
+	return &shoppb.Customer{
 		Version:      int32(c.Version),
 		Id:           c.ID,
 		FirstName:    c.FirstName,
