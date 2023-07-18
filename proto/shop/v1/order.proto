@@ -1,10 +1,10 @@
 syntax = "proto3";
-package fake_models;
+
+package shop.v1;
 
 import "google/protobuf/timestamp.proto";
-import "customer.proto";
-import "address.proto";
-option go_package = "pkg/protobuf";
+import "shop/v1/address.proto";
+import "shop/v1/customer.proto";
 
 message Order {
   int32 version = 1;
@@ -14,8 +14,8 @@ message Order {
   google.protobuf.Timestamp delivered_at = 5;
   google.protobuf.Timestamp completed_at = 6;
 
-  Customer Customer = 7;
-  int32 OrderValue = 8;
+  Customer customer = 7;
+  int32 order_value = 8;
 
   message LineItem {
     string article_id = 1;

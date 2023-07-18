@@ -1,7 +1,6 @@
 syntax = "proto3";
-package fake_models;
 
-option go_package = "pkg/protobuf";
+package shop.v1;
 
 message Customer {
   int32 version = 1;
@@ -12,8 +11,9 @@ message Customer {
   string company_name = 6;
   string email = 7;
   enum CustomerType {
-    PERSONAL = 0;
-    BUSINESS = 1;
+    CUSTOMER_TYPE_UNSPECIFIED = 0;
+    CUSTOMER_TYPE_PERSONAL = 1;
+    CUSTOMER_TYPE_BUSINESS = 2;
   }
   CustomerType customer_type = 8;
   int32 revision = 9;

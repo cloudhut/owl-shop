@@ -1,0 +1,8 @@
+version: 3
+
+vars:
+  BUILD_ROOT: "{{ .ROOT_DIR }}/build"
+
+
+includes:
+  proto: taskfiles/proto.yaml
