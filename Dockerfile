@@ -1,7 +1,7 @@
 ############################################################
 # Build
 ############################################################
-FROM golang:1.19-alpine as builder
+FROM golang:1.20-alpine as builder
 RUN apk update && apk add --no-cache git ca-certificates && update-ca-certificates
 
 WORKDIR /app
