@@ -12,6 +12,7 @@ import (
 
 	"github.com/cloudhut/owl-shop/pkg/config"
 	"github.com/cloudhut/owl-shop/pkg/kafka"
+	"github.com/cloudhut/owl-shop/pkg/sr"
 )
 
 type Shop struct {
@@ -26,6 +27,13 @@ type Shop struct {
 
 func New(cfg config.Config, logger *zap.Logger) (*Shop, error) {
 	kafkaFactory := kafka.NewFactory(cfg.Kafka, logger.Named("kafka_client"))
+	schemaFactory := sr.NewFactory(cfg.SchemaRegistry, logger.Named("schema_registry"))
+
+	// srClient may be nil if schema registry hasn't been configured
+	srClient, err := schemaFactory.NewSchemaRegistryClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create schema registry client")
+	}
 
 	customerSvc, err := NewCustomerService(cfg.Shop, logger, kafkaFactory)
 	if err != nil {
@@ -42,7 +50,7 @@ func New(cfg config.Config, logger *zap.Logger) (*Shop, error) {
 		return nil, fmt.Errorf("failed to create frontend service: %w", err)
 	}
 
-	orderSvc, err := NewOrderService(cfg.Shop, logger.Named("order_svc"), kafkaFactory)
+	orderSvc, err := NewOrderService(cfg.Shop, logger.Named("order_svc"), kafkaFactory, srClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create order service: %w", err)
 	}

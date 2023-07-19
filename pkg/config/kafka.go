@@ -7,7 +7,7 @@ import (
 // Kafka API config for connecting to the target cluster.
 type Kafka struct {
 	Brokers []string `yaml:"brokers"`
-	TLS     KafkaTLS `yaml:"tls"`
+	TLS     TLS      `yaml:"tls"`
 	SASL    SASL     `yaml:"sasl"`
 }
 

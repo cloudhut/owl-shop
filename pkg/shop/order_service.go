@@ -9,12 +9,14 @@ import (
 
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/sr"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/cloudhut/owl-shop/pkg/config"
 	"github.com/cloudhut/owl-shop/pkg/fake"
 	"github.com/cloudhut/owl-shop/pkg/kafka"
+	embedproto "github.com/cloudhut/owl-shop/proto"
 )
 
 // OrderService is the service that is in charge of handling incoming orders.
@@ -29,20 +31,24 @@ type OrderService struct {
 	kafkaFactory   *kafka.Factory
 	consumerClient *kgo.Client
 	metaClient     *kgo.Client
+	srClient       *sr.Client
 
 	bufferSize        int
 	recentCustomersMu sync.RWMutex
 	recentCustomers   []fake.Customer
 
-	topicName         string
-	topicNameProtobuf string
+	topicName              string
+	topicNameProtobufPlain string
+	topicNameProtobufSr    string
 }
 
-// NewOrderService creates a new OrderService.
+// NewOrderService creates a new OrderService. All dependencies are passed into here.
+// The schema registry client is optional and may be nil.
 func NewOrderService(
 	cfg config.Shop,
 	logger *zap.Logger,
 	kafkaFactory *kafka.Factory,
+	srClient *sr.Client,
 ) (*OrderService, error) {
 	clientID := cfg.GlobalPrefix + "order-service"
 
@@ -72,13 +78,15 @@ func NewOrderService(
 		kafkaFactory:   kafkaFactory,
 		consumerClient: consumerClient,
 		metaClient:     metaClient,
+		srClient:       srClient,
 
 		bufferSize:        bufferSize,
 		recentCustomersMu: sync.RWMutex{},
 		recentCustomers:   recentCustomers,
 
-		topicName:         cfg.GlobalPrefix + "orders",
-		topicNameProtobuf: cfg.GlobalPrefix + "orders" + "-protobuf",
+		topicName:              cfg.GlobalPrefix + "orders",
+		topicNameProtobufPlain: cfg.GlobalPrefix + "orders" + "-protobuf-plain",
+		topicNameProtobufSr:    cfg.GlobalPrefix + "orders" + "-protobuf-sr",
 	}, nil
 }
 
@@ -136,13 +144,86 @@ func (svc *OrderService) Initialize(ctx context.Context) error {
 
 	err = kafka.ReconcileTopic(ctx,
 		svc.metaClient,
-		svc.topicNameProtobuf,
+		svc.topicNameProtobufPlain,
 		svc.cfg.TopicPartitionCount,
 		svc.cfg.TopicReplicationFactor,
 		topicCfg,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create protobuf topic: %w", err)
+		return fmt.Errorf("failed to create protobuf plain topic: %w", err)
+	}
+
+	if svc.srClient != nil {
+		if err := kafka.ReconcileTopic(ctx,
+			svc.metaClient,
+			svc.topicNameProtobufSr,
+			svc.cfg.TopicPartitionCount,
+			svc.cfg.TopicReplicationFactor,
+			topicCfg,
+		); err != nil {
+			return fmt.Errorf("failed to create protobuf sr topic: %w", err)
+		}
+
+		if err := svc.registerProtobufSchemas(ctx); err != nil {
+			return fmt.Errorf("failed to register protobuf schemas in schema registry: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// registerProtobufSchemas registers the used protobuf schemas in the schema registry, so that
+// serialized messages can be deserialized by other tools like Redpanda Console or CLIs.
+func (svc *OrderService) registerProtobufSchemas(ctx context.Context) error {
+	// Register dependency schemas first, then main schema with references
+	customerProtoSubject := "shop/v1/customer.proto"
+	_, err := svc.srClient.CreateSchema(
+		ctx,
+		customerProtoSubject,
+		sr.Schema{
+			Schema: embedproto.Customer,
+			Type:   sr.TypeProtobuf,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to register customer schema: %w", err)
+	}
+
+	addressProtoSubject := "shop/v1/address.proto"
+	_, err = svc.srClient.CreateSchema(
+		ctx,
+		addressProtoSubject,
+		sr.Schema{
+			Schema: embedproto.Address,
+			Type:   sr.TypeProtobuf,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to register address schema: %w", err)
+	}
+
+	_, err = svc.srClient.CreateSchema(
+		ctx,
+		svc.topicNameProtobufSr+"-value",
+		sr.Schema{
+			Schema: embedproto.Order,
+			Type:   sr.TypeProtobuf,
+			References: []sr.SchemaReference{
+				{
+					Name:    "customer.proto",
+					Subject: customerProtoSubject,
+					Version: 1,
+				},
+				{
+					Name:    "address.proto",
+					Subject: addressProtoSubject,
+					Version: -1,
+				},
+			},
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to register order schema: %w", err)
 	}
 
 	return nil
@@ -215,7 +296,7 @@ func (svc *OrderService) produceOrderProtobuf(order fake.Order) error {
 			{Key: "proto_message_type", Value: []byte("Order")},
 		},
 		Timestamp: time.Now(),
-		Topic:     svc.topicNameProtobuf,
+		Topic:     svc.topicNameProtobufPlain,
 	}
 
 	svc.metaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {

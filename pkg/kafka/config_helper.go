@@ -1,7 +1,6 @@
 package kafka
 
 import (
-	"crypto/tls"
 	"fmt"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 	"github.com/twmb/franz-go/pkg/sasl/plain"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
 	"github.com/twmb/franz-go/plugin/kzap"
-	"github.com/twmb/tlscfg"
 	"go.uber.org/zap"
 
 	"github.com/cloudhut/owl-shop/pkg/config"
@@ -92,17 +90,7 @@ func NewKgoConfig(cfg *config.Kafka, logger *zap.Logger) ([]kgo.Opt, error) {
 
 	// Configure TLS
 	if cfg.TLS.Enabled {
-		tlsCfg, err := tlscfg.New(
-			tlscfg.MaybeWithDiskCA(cfg.TLS.CaFilepath, tlscfg.ForClient),
-			tlscfg.MaybeWithDiskKeyPair(cfg.TLS.CertFilepath, cfg.TLS.KeyFilepath),
-			tlscfg.WithSystemCertPool(),
-			tlscfg.WithOverride(func(config *tls.Config) error {
-				if cfg.TLS.InsecureSkipTLSVerify {
-					config.InsecureSkipVerify = true
-				}
-				return nil
-			}),
-		)
+		tlsCfg, err := cfg.TLS.TLSConfig()
 		if err != nil {
 			return nil, fmt.Errorf("failed to create tls config: %w", err)
 		}

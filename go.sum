@@ -332,6 +332,8 @@ github.com/twmb/franz-go/pkg/kmsg v1.6.1 h1:tm6hXPv5antMHLasTfKv9R+X03AjHSkSkXhQ
 github.com/twmb/franz-go/pkg/kmsg v1.6.1/go.mod h1:se9Mjdt0Nwzc9lnjJ0HyDtLyBnaBDAd7pCje47OhSyw=
 github.com/twmb/franz-go/pkg/sasl/kerberos v1.1.0 h1:alKdbddkPw3rDh+AwmUEwh6HNYgTvDSFIe/GWYRR9RM=
 github.com/twmb/franz-go/pkg/sasl/kerberos v1.1.0/go.mod h1:k8BoBjyUbFj34f0rRbn+Ky12sZFAPbmShrg0karAIMo=
+github.com/twmb/franz-go/pkg/sr v0.0.0-20230717142958-b13e4c4c6074 h1:3tkKjTyaXZ8xcxUaqJv3YVgaI1GSKoli5ZK/wLpXfZM=
+github.com/twmb/franz-go/pkg/sr v0.0.0-20230717142958-b13e4c4c6074/go.mod h1:egX+kicq83hpztv3PRCXKLNO132Ol9JTAJOCRZcqUxI=
 github.com/twmb/franz-go/plugin/kzap v1.1.1 h1:ae8Z2JXn8y9ceZ2AFnwPm5U1A8d6cBvvZlygF46F2N4=
 github.com/twmb/franz-go/plugin/kzap v1.1.1/go.mod h1:TUlWYqucIyz6U7xLo++gkHBDiJmed5FpYe42rCL2YG0=
 github.com/twmb/franz-go/plugin/kzap v1.1.2 h1:0arX5xJ0soUPX1LlDay6ZZoxuWkWk1lggQ5M/IgRXAE=

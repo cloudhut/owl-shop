@@ -17,9 +17,10 @@ import (
 type Config struct {
 	ConfigFilepath string
 
-	Logger logging.Config `yaml:"logger"`
-	Kafka  Kafka          `yaml:"kafka"`
-	Shop   Shop           `yaml:"shop"`
+	Logger         logging.Config `yaml:"logger"`
+	Kafka          Kafka          `yaml:"kafka"`
+	SchemaRegistry SchemaRegistry `yaml:"schemaRegistry"`
+	Shop           Shop           `yaml:"shop"`
 }
 
 func (c *Config) SetDefaults() {
