@@ -47,6 +47,8 @@ type OrderService struct {
 	topicName              string
 	topicNameProtobufPlain string
 	topicNameProtobufSr    string
+
+	protobufSerde sr.Serde
 }
 
 // NewOrderService creates a new OrderService. All dependencies are passed into here.
@@ -94,6 +96,8 @@ func NewOrderService(
 		topicName:              cfg.GlobalPrefix + "orders",
 		topicNameProtobufPlain: cfg.GlobalPrefix + "orders" + "-protobuf-plain",
 		topicNameProtobufSr:    cfg.GlobalPrefix + "orders" + "-protobuf-sr",
+
+		protobufSerde: sr.Serde{}, // Has to be registered after creating the schema
 	}, nil
 }
 
@@ -172,17 +176,28 @@ func (svc *OrderService) Initialize(ctx context.Context) error {
 			return fmt.Errorf("failed to create protobuf sr topic: %w", err)
 		}
 
-		if err := svc.registerProtobufSchemas(ctx); err != nil {
+		orderSchemaID, err := svc.registerProtobufSchema(ctx)
+		if err != nil {
 			return fmt.Errorf("failed to register protobuf schemas in schema registry: %w", err)
 		}
+
+		svc.protobufSerde.Register(
+			orderSchemaID,
+			&shoppb.Order{},
+			sr.EncodeFn(func(v any) ([]byte, error) {
+				return proto.Marshal(v.(*shoppb.Order))
+			}),
+			sr.Index(0),
+		)
 	}
 
 	return nil
 }
 
-// registerProtobufSchemas registers the used protobuf schemas in the schema registry, so that
+// registerProtobufSchema registers the used protobuf schemas in the schema registry, so that
 // serialized messages can be deserialized by other tools like Redpanda Console or CLIs.
-func (svc *OrderService) registerProtobufSchemas(ctx context.Context) error {
+// If successful, it returns the schema id.
+func (svc *OrderService) registerProtobufSchema(ctx context.Context) (int, error) {
 	// Register dependency schemas first, then main schema with references
 	customerProtoSubject := "shop/v1/customer.proto"
 
@@ -197,7 +212,7 @@ func (svc *OrderService) registerProtobufSchemas(ctx context.Context) error {
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("failed to register customer schema: %w", err)
+		return -1, fmt.Errorf("failed to register customer schema: %w", err)
 	}
 
 	_, err = svc.srClient.CreateSchema(
@@ -209,7 +224,7 @@ func (svc *OrderService) registerProtobufSchemas(ctx context.Context) error {
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("failed to register customer schema: %w", err)
+		return -1, fmt.Errorf("failed to register customer schema: %w", err)
 	}
 
 	addressProtoSubject := "shop/v1/address.proto"
@@ -222,7 +237,7 @@ func (svc *OrderService) registerProtobufSchemas(ctx context.Context) error {
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("failed to register address schema: %w", err)
+		return -1, fmt.Errorf("failed to register address schema: %w", err)
 	}
 
 	orderSchema, err := svc.srClient.CreateSchema(
@@ -235,30 +250,21 @@ func (svc *OrderService) registerProtobufSchemas(ctx context.Context) error {
 				{
 					Name:    customerProtoSubject,
 					Subject: customerProtoSubject,
-					Version: -1,
+					Version: 2,
 				},
 				{
 					Name:    addressProtoSubject,
 					Subject: addressProtoSubject,
-					Version: -1,
+					Version: 1,
 				},
 			},
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("failed to register order schema: %w", err)
+		return -1, fmt.Errorf("failed to register order schema: %w", err)
 	}
-	var serde sr.Serde
-	serde.Register(
-		orderSchema.ID,
-		&shoppb.Order{},
-		sr.EncodeFn(func(v any) ([]byte, error) {
-			return proto.Marshal(v.(*shoppb.Order))
-		}),
-		nil,
-	)
 
-	return nil
+	return orderSchema.ID, nil
 }
 
 // CreateOrder creates a new fake order message. It pops a previously produced
@@ -283,6 +289,16 @@ func (svc *OrderService) CreateOrder() {
 		return
 	}
 	kafkaMessagesProducedTotal.With(map[string]string{"event_type": EventTypeOrderCreated}).Add(2)
+
+	if svc.srClient != nil {
+		err = svc.produceOrderSrProtobuf(order)
+		if err != nil {
+			svc.logger.Warn("failed to produce order (protobuf)", zap.Error(err))
+			return
+		}
+		kafkaMessagesProducedTotal.With(map[string]string{"event_type": EventTypeOrderCreated}).Add(1)
+	}
+
 	return
 }
 
@@ -329,6 +345,38 @@ func (svc *OrderService) produceOrderPlainProtobuf(order fake.Order) error {
 		},
 		Timestamp: time.Now(),
 		Topic:     svc.topicNameProtobufPlain,
+	}
+
+	svc.metaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {
+		if err != nil {
+			svc.logger.Error("failed to produce record",
+				zap.String("topic_name", rec.Topic),
+				zap.Error(err),
+			)
+			return
+		}
+	})
+
+	return nil
+}
+
+// produceOrderSrProtobuf produces a protobuf message with schema registry encoding.
+func (svc *OrderService) produceOrderSrProtobuf(order fake.Order) error {
+	pbOrder := order.Protobuf()
+	serialized, err := svc.protobufSerde.Encode(pbOrder)
+	if err != nil {
+		return fmt.Errorf("failed to encode porotobuf order: %w", err)
+	}
+
+	rec := kgo.Record{
+		Key:   []byte(order.ID),
+		Value: serialized,
+		Headers: []kgo.RecordHeader{
+			{Key: "revision", Value: []byte("0")},
+			{Key: "proto_message_type", Value: []byte("Order")},
+		},
+		Timestamp: time.Now(),
+		Topic:     svc.topicNameProtobufSr,
 	}
 
 	svc.metaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {
