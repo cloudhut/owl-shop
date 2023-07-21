@@ -2,6 +2,7 @@ package shop
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -16,7 +17,13 @@ import (
 	"github.com/cloudhut/owl-shop/pkg/config"
 	"github.com/cloudhut/owl-shop/pkg/fake"
 	"github.com/cloudhut/owl-shop/pkg/kafka"
+	shoppb "github.com/cloudhut/owl-shop/pkg/protogen/shop/v1"
 	embedproto "github.com/cloudhut/owl-shop/proto"
+)
+
+var (
+	//go:embed customer_v1.proto
+	customerV1Proto string
 )
 
 // OrderService is the service that is in charge of handling incoming orders.
@@ -154,6 +161,7 @@ func (svc *OrderService) Initialize(ctx context.Context) error {
 	}
 
 	if svc.srClient != nil {
+		// Protobuf topic
 		if err := kafka.ReconcileTopic(ctx,
 			svc.metaClient,
 			svc.topicNameProtobufSr,
@@ -177,7 +185,22 @@ func (svc *OrderService) Initialize(ctx context.Context) error {
 func (svc *OrderService) registerProtobufSchemas(ctx context.Context) error {
 	// Register dependency schemas first, then main schema with references
 	customerProtoSubject := "shop/v1/customer.proto"
+
+	// This registers an older proto version first, so that we simulate
+	// a schema evolution as well.
 	_, err := svc.srClient.CreateSchema(
+		ctx,
+		customerProtoSubject,
+		sr.Schema{
+			Schema: customerV1Proto,
+			Type:   sr.TypeProtobuf,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to register customer schema: %w", err)
+	}
+
+	_, err = svc.srClient.CreateSchema(
 		ctx,
 		customerProtoSubject,
 		sr.Schema{
@@ -202,7 +225,7 @@ func (svc *OrderService) registerProtobufSchemas(ctx context.Context) error {
 		return fmt.Errorf("failed to register address schema: %w", err)
 	}
 
-	_, err = svc.srClient.CreateSchema(
+	orderSchema, err := svc.srClient.CreateSchema(
 		ctx,
 		svc.topicNameProtobufSr+"-value",
 		sr.Schema{
@@ -210,12 +233,12 @@ func (svc *OrderService) registerProtobufSchemas(ctx context.Context) error {
 			Type:   sr.TypeProtobuf,
 			References: []sr.SchemaReference{
 				{
-					Name:    "customer.proto",
+					Name:    customerProtoSubject,
 					Subject: customerProtoSubject,
-					Version: 1,
+					Version: -1,
 				},
 				{
-					Name:    "address.proto",
+					Name:    addressProtoSubject,
 					Subject: addressProtoSubject,
 					Version: -1,
 				},
@@ -225,6 +248,15 @@ func (svc *OrderService) registerProtobufSchemas(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to register order schema: %w", err)
 	}
+	var serde sr.Serde
+	serde.Register(
+		orderSchema.ID,
+		&shoppb.Order{},
+		sr.EncodeFn(func(v any) ([]byte, error) {
+			return proto.Marshal(v.(*shoppb.Order))
+		}),
+		nil,
+	)
 
 	return nil
 }
@@ -245,7 +277,7 @@ func (svc *OrderService) CreateOrder() {
 		svc.logger.Warn("failed to produce order (json)", zap.Error(err))
 		return
 	}
-	err = svc.produceOrderProtobuf(order)
+	err = svc.produceOrderPlainProtobuf(order)
 	if err != nil {
 		svc.logger.Warn("failed to produce order (protobuf)", zap.Error(err))
 		return
@@ -281,7 +313,7 @@ func (svc *OrderService) produceOrderJSON(order fake.Order) error {
 	return nil
 }
 
-func (svc *OrderService) produceOrderProtobuf(order fake.Order) error {
+func (svc *OrderService) produceOrderPlainProtobuf(order fake.Order) error {
 	pbOrder := order.Protobuf()
 	serialized, err := proto.Marshal(pbOrder)
 	if err != nil {

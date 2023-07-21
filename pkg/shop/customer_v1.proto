@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package shop.v1;
+
+message Customer {
+  int32 version = 1;
+  string id = 2;
+  string first_name = 3;
+  string last_name = 4;
+  string gender = 5;
+  string company_name = 6;
+  string email = 7;
+}
