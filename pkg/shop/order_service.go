@@ -22,7 +22,7 @@ import (
 )
 
 var (
-	//go:embed customer_v1.proto
+	//go:embed schemas/customer_v1.proto
 	customerV1Proto string
 )
 
