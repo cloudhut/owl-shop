@@ -52,7 +52,7 @@ func NewFrontendService(
 }
 
 func (svc *FrontendService) Initialize(ctx context.Context) error {
-	svc.logger.Info("initializing customer service")
+	svc.logger.Info("initializing frontend service")
 	err := kafka.ReconcileTopic(
 		ctx,
 		svc.metaClient,
@@ -68,7 +68,7 @@ func (svc *FrontendService) Initialize(ctx context.Context) error {
 		return fmt.Errorf("failed to reconcile topic: %w", err)
 	}
 
-	svc.logger.Info("successfully initialized customer service")
+	svc.logger.Info("successfully initialized frontend service")
 
 	return nil
 }
