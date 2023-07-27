@@ -7,7 +7,7 @@ var (
 	Address string
 	//go:embed shop/v1/customer_v1.proto
 	CustomerV1 string
-	//go:embed shop/v1/customer_v2.proto
+	//go:embed shop/v1/customer.proto
 	CustomerV2 string
 	//go:embed shop/v1/order.proto
 	Order string
