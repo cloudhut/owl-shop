@@ -30,7 +30,7 @@ tasks:
       # Delete previously generated files
       - rm -rf {{.BACKEND_ROOT}}/internal/protogen
       - rm -rf {{.FRONTEND_ROOT}}/src/protogen
-      - PATH={{.BUILD_ROOT}}/bin:$PATH buf generate --include-imports
+      - PATH={{.BUILD_ROOT}}/bin:$PATH buf generate --include-imports --exclude-path proto/shop/v1/customer_v1.proto
       - if [[ $CI == "true" ]]; then git diff --exit-code; fi
 
   install-buf:
