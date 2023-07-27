@@ -1,0 +1,93 @@
+{
+  "type": "record",
+  "name": "Address",
+  "namespace": "com.shop.v1.avro",
+  "doc": "Address is a customer's address that can be selected for deliveries or invoices",
+  "fields": [
+    {
+      "name": "version",
+      "type": "int"
+    },
+    {
+      "name": "id",
+      "type": "string"
+    },
+    {
+      "name": "customer",
+      "type": {
+        "name": "AddressCustomer",
+        "type": "record",
+        "fields": [
+          {
+            "name": "id",
+            "type": "string"
+          },
+          {
+            "name": "type",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "type",
+      "type": {
+        "name": "AddressType",
+        "type": "enum",
+        "symbols": ["INVOICE", "DELIVERY"]
+      }
+    },
+    {
+      "name": "firstName",
+      "type": "string"
+    },
+    {
+      "name": "lastName",
+      "type": "string"
+    },
+    {
+      "name": "state",
+      "type": "string"
+    },
+    {
+      "name": "street",
+      "type": "string"
+    },
+    {
+      "name": "houseNumber",
+      "type": "string"
+    },
+    {
+      "name": "city",
+      "type": "string"
+    },
+    {
+      "name": "zip",
+      "type": "string"
+    },
+    {
+      "name": "latitude",
+      "type": "double"
+    },
+    {
+      "name": "longitude",
+      "type": "double"
+    },
+    {
+      "name": "phone",
+      "type": "string"
+    },
+    {
+      "name": "additionalAddressInfo",
+      "type": "string"
+    },
+    {
+      "name": "createdAt",
+      "type": {"type": "int", "logicalType": "date"}
+    },
+    {
+      "name": "revision",
+      "type": "int"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "type": "record",
+  "name": "Customer",
+  "namespace": "com.shop.v1.avro",
+  "doc": "Customer is a registered user in the owl shop",
+  "fields": [
+    {
+      "name": "version",
+      "type": "int"
+    },
+    {
+      "name": "id",
+      "type": "string"
+    },
+    {
+      "name": "firstName",
+      "type": "string"
+    },
+    {
+      "name": "lastName",
+      "type": "string"
+    },
+    {
+      "name": "gender",
+      "type": "string"
+    },
+    {
+      "name": "companyName",
+      "type": "string"
+    },
+    {
+      "name": "email",
+      "type": "string"
+    }
+  ]
+}

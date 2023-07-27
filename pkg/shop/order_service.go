@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hamba/avro"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sr"
@@ -18,12 +19,8 @@ import (
 	"github.com/cloudhut/owl-shop/pkg/fake"
 	"github.com/cloudhut/owl-shop/pkg/kafka"
 	shoppb "github.com/cloudhut/owl-shop/pkg/protogen/shop/v1"
+	embedavro "github.com/cloudhut/owl-shop/pkg/shop/schemas/avro"
 	embedproto "github.com/cloudhut/owl-shop/proto"
-)
-
-var (
-	//go:embed schemas/customer_v1.proto
-	customerV1Proto string
 )
 
 // OrderService is the service that is in charge of handling incoming orders.
@@ -47,8 +44,10 @@ type OrderService struct {
 	topicName              string
 	topicNameProtobufPlain string
 	topicNameProtobufSr    string
+	topicNameAvroSr        string
 
 	protobufSerde sr.Serde
+	avroSerde     sr.Serde
 }
 
 // NewOrderService creates a new OrderService. All dependencies are passed into here.
@@ -96,6 +95,7 @@ func NewOrderService(
 		topicName:              cfg.GlobalPrefix + "orders",
 		topicNameProtobufPlain: cfg.GlobalPrefix + "orders" + "-protobuf-plain",
 		topicNameProtobufSr:    cfg.GlobalPrefix + "orders" + "-protobuf-sr",
+		topicNameAvroSr:        cfg.GlobalPrefix + "orders" + "-avro-sr",
 
 		protobufSerde: sr.Serde{}, // Has to be registered after creating the schema
 	}, nil
@@ -165,7 +165,7 @@ func (svc *OrderService) Initialize(ctx context.Context) error {
 	}
 
 	if svc.srClient != nil {
-		// Protobuf topic
+		// 1. Protobuf Setup
 		if err := kafka.ReconcileTopic(ctx,
 			svc.metaClient,
 			svc.topicNameProtobufSr,
@@ -189,6 +189,45 @@ func (svc *OrderService) Initialize(ctx context.Context) error {
 			}),
 			sr.Index(0),
 		)
+
+		// 2. Avro Setup
+		if err := kafka.ReconcileTopic(ctx,
+			svc.metaClient,
+			svc.topicNameAvroSr,
+			svc.cfg.TopicPartitionCount,
+			svc.cfg.TopicReplicationFactor,
+			topicCfg,
+		); err != nil {
+			return fmt.Errorf("failed to create avro sr topic: %w", err)
+		}
+
+		orderAvroSchemaID, err := svc.registerAvroSchema(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to register avro schemas in schema registry: %w", err)
+		}
+
+		// Parse all schemas to add them to the global cache
+		avro.DefaultConfig = avro.Config{
+			TagKey: "json",
+		}.Freeze()
+		if _, err := avro.Parse(embedavro.CustomerV2Avro); err != nil {
+			return fmt.Errorf("failed to parse customerV2 avro schema with avro lib: %w", err)
+		}
+		if _, err := avro.Parse(embedavro.AddressAvro); err != nil {
+			return fmt.Errorf("failed to parse address avro schema with avro lib: %w", err)
+		}
+		orderAvroSchema, err := avro.Parse(embedavro.OrderAvro)
+		if err != nil {
+			return fmt.Errorf("failed to parse order avro schema with avro lib: %w", err)
+		}
+
+		svc.avroSerde.Register(
+			orderAvroSchemaID,
+			fake.Order{},
+			sr.EncodeFn(func(v any) ([]byte, error) {
+				return avro.Marshal(orderAvroSchema, v)
+			}),
+		)
 	}
 
 	return nil
@@ -207,7 +246,7 @@ func (svc *OrderService) registerProtobufSchema(ctx context.Context) (int, error
 		ctx,
 		customerProtoSubject,
 		sr.Schema{
-			Schema: customerV1Proto,
+			Schema: embedproto.CustomerV1,
 			Type:   sr.TypeProtobuf,
 		},
 	)
@@ -219,7 +258,7 @@ func (svc *OrderService) registerProtobufSchema(ctx context.Context) (int, error
 		ctx,
 		customerProtoSubject,
 		sr.Schema{
-			Schema: embedproto.Customer,
+			Schema: embedproto.CustomerV2,
 			Type:   sr.TypeProtobuf,
 		},
 	)
@@ -267,6 +306,75 @@ func (svc *OrderService) registerProtobufSchema(ctx context.Context) (int, error
 	return orderSchema.ID, nil
 }
 
+// registerAvroSchema registers the used avro schemas in the schema registry, so that
+// serialized messages can be deserialized by other tools like Redpanda Console or CLIs.
+// If successful, it returns the schema id.
+func (svc *OrderService) registerAvroSchema(ctx context.Context) (int, error) {
+	// This registers an older proto version first, so that we simulate
+	// a schema evolution as well.
+	customerV1, err := svc.srClient.CreateSchema(
+		ctx,
+		"com.shop.v1.avro.Customer",
+		sr.Schema{
+			Schema: embedavro.CustomerV1Avro,
+			Type:   sr.TypeAvro,
+		},
+	)
+	if err != nil {
+		return -1, fmt.Errorf("failed to register customer v1 schema: %w", err)
+	}
+
+	customerV2, err := svc.srClient.CreateSchema(
+		ctx,
+		customerV1.Subject,
+		sr.Schema{
+			Schema: embedavro.CustomerV2Avro,
+			Type:   sr.TypeAvro,
+		},
+	)
+	if err != nil {
+		return -1, fmt.Errorf("failed to register customer v2 schema: %w", err)
+	}
+
+	address, err := svc.srClient.CreateSchema(
+		ctx,
+		"com.shop.v1.avro.Address",
+		sr.Schema{
+			Schema: embedavro.AddressAvro,
+			Type:   sr.TypeAvro,
+		},
+	)
+	if err != nil {
+		return -1, fmt.Errorf("failed to register address schema: %w", err)
+	}
+
+	orderSchema, err := svc.srClient.CreateSchema(
+		ctx,
+		svc.topicNameAvroSr+"-value",
+		sr.Schema{
+			Schema: embedavro.OrderAvro,
+			Type:   sr.TypeAvro,
+			References: []sr.SchemaReference{
+				{
+					Name:    customerV2.Subject,
+					Subject: customerV2.Subject,
+					Version: 2,
+				},
+				{
+					Name:    address.Subject,
+					Subject: address.Subject,
+					Version: 1,
+				},
+			},
+		},
+	)
+	if err != nil {
+		return -1, fmt.Errorf("failed to register order schema: %w", err)
+	}
+
+	return orderSchema.ID, nil
+}
+
 // CreateOrder creates a new fake order message. It pops a previously produced
 // fake customer from the in-memory cache so that an existing customer can be
 // referenced in the order message.
@@ -293,7 +401,14 @@ func (svc *OrderService) CreateOrder() {
 	if svc.srClient != nil {
 		err = svc.produceOrderSrProtobuf(order)
 		if err != nil {
-			svc.logger.Warn("failed to produce order (protobuf)", zap.Error(err))
+			svc.logger.Warn("failed to produce order (protobuf sr)", zap.Error(err))
+			return
+		}
+		kafkaMessagesProducedTotal.With(map[string]string{"event_type": EventTypeOrderCreated}).Add(1)
+
+		err = svc.produceOrderSrAvro(order)
+		if err != nil {
+			svc.logger.Warn("failed to produce order (avro sr)", zap.Error(err))
 			return
 		}
 		kafkaMessagesProducedTotal.With(map[string]string{"event_type": EventTypeOrderCreated}).Add(1)
@@ -377,6 +492,37 @@ func (svc *OrderService) produceOrderSrProtobuf(order fake.Order) error {
 		},
 		Timestamp: time.Now(),
 		Topic:     svc.topicNameProtobufSr,
+	}
+
+	svc.metaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {
+		if err != nil {
+			svc.logger.Error("failed to produce record",
+				zap.String("topic_name", rec.Topic),
+				zap.Error(err),
+			)
+			return
+		}
+	})
+
+	return nil
+}
+
+// produceOrderSrAvro produces an avro message with schema registry encoding.
+func (svc *OrderService) produceOrderSrAvro(order fake.Order) error {
+	serialized, err := svc.avroSerde.Encode(order)
+	if err != nil {
+		return fmt.Errorf("failed to encode avro order: %w", err)
+	}
+
+	rec := kgo.Record{
+		Key:   []byte(order.ID),
+		Value: serialized,
+		Headers: []kgo.RecordHeader{
+			{Key: "revision", Value: []byte("0")},
+			{Key: "avro_message_type", Value: []byte("Order")},
+		},
+		Timestamp: time.Now(),
+		Topic:     svc.topicNameAvroSr,
 	}
 
 	svc.metaClient.Produce(context.Background(), &rec, func(rec *kgo.Record, err error) {

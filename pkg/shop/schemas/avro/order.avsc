@@ -1,0 +1,105 @@
+{
+  "type": "record",
+  "name": "Order",
+  "namespace": "com.shop.v1.avro",
+  "doc": "Order is a customer submitted order that contains at least one item",
+  "fields": [
+    {
+      "name": "version",
+      "type": "int",
+      "default": 0
+    },
+    {
+      "name": "id",
+      "type": "string"
+    },
+    {
+      "name": "createdAt",
+      "type": ["null", {"type": "int", "logicalType": "date"}]
+    },
+    {
+      "name": "lastUpdatedAt",
+      "type": ["null", {"type": "int", "logicalType": "date"}],
+      "default": null
+    },
+    {
+      "name": "deliveredAt",
+      "type": ["null", {"type": "int", "logicalType": "date"}],
+      "default": null
+    },
+    {
+      "name": "customer",
+      "type": "com.shop.v1.avro.Customer"
+    },
+    {
+      "name": "completedAt",
+      "type": ["null", {"type": "int", "logicalType": "date"}],
+      "default": null
+    },
+    {
+      "name": "orderValue",
+      "type": "int"
+    },
+    {
+      "name": "lineItems",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "OrderLineItem",
+          "fields": [
+            {
+              "name": "articleId",
+              "type": "string"
+            },
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "quantity",
+              "type": "int"
+            },
+            {
+              "name": "quantityUnit",
+              "type": "string"
+            },
+            {
+              "name": "unitPrice",
+              "type": "int"
+            },
+            {
+              "name": "totalPrice",
+              "type": "int"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "payment",
+      "type": {
+        "name": "OrderPayment",
+        "type": "record",
+        "fields": [
+          {
+            "name": "paymentId",
+            "type": "string"
+          },
+          {
+            "name": "method",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "deliveryAddress",
+      "type": "com.shop.v1.avro.Address"
+    },
+    {
+      "name": "revision",
+      "type": "int"
+    }
+  ]
+}
