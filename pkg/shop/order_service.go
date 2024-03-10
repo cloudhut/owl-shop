@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hamba/avro"
+	"github.com/hamba/avro/v2"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sr"
