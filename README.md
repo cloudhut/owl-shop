@@ -1,8 +1,7 @@
 # Owl Shop / Kafka Load Test Tool
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/cloudhut/owl-shop/blob/master/LICENSE)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/cloudhut/owl-shop/blob/main/LICENSE)
 ![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/cloudhut/owl-shop?sort=semver)
-[![Discord Chat](https://img.shields.io/badge/discord-online-brightgreen.svg)](https://discord.gg/KQj7P6v)
 [![Docker Repository on Quay](https://img.shields.io/badge/docker%20image-ready-green "Docker Repository on Quay")](https://quay.io/repository/cloudhut/owl-shop?tab=tags)
 
 Owl Shop is an imaginary ecommerce shop that simulates microservices exchanging data via Apache Kafka.
