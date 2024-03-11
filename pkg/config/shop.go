@@ -25,6 +25,11 @@ type Shop struct {
 
 	// TopicPartitionCount that shall be used for all Kafka topics.
 	TopicPartitionCount int32 `yaml:"topicPartitionCount"`
+
+	// Meta is the config for the meta service that creates additional
+	// resources such as ACLs that are not required for generating
+	// data, but may help to create a more production-like environment.
+	Meta ShopMeta `yaml:"meta"`
 }
 
 // SetDefaults for shop config.
@@ -34,6 +39,7 @@ func (c *Shop) SetDefaults() {
 	c.RequestRateInterval = time.Second
 	c.TopicReplicationFactor = -1
 	c.TopicPartitionCount = 1
+	c.Meta.Enabled = true
 }
 
 // Validate shop configuration.

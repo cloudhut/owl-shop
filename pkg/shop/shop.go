@@ -29,6 +29,11 @@ func New(cfg config.Config, logger *zap.Logger) (*Shop, error) {
 	kafkaFactory := kafka.NewFactory(cfg.Kafka, logger.Named("kafka_client"))
 	schemaFactory := sr.NewFactory(cfg.SchemaRegistry, logger.Named("schema_registry"))
 
+	metaKafkaCl, err := kafkaFactory.NewKafkaClient(cfg.Shop.GlobalPrefix + "meta-service")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create meta kafka client")
+	}
+
 	// srClient may be nil if schema registry hasn't been configured
 	srClient, err := schemaFactory.NewSchemaRegistryClient()
 	if err != nil {
@@ -55,6 +60,11 @@ func New(cfg config.Config, logger *zap.Logger) (*Shop, error) {
 		return nil, fmt.Errorf("failed to create order service: %w", err)
 	}
 
+	metaSvc, err := NewMetaService(cfg.Shop, logger.Named("meta-svc"), metaKafkaCl)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create meta service: %w", err)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
@@ -76,6 +86,11 @@ func New(cfg config.Config, logger *zap.Logger) (*Shop, error) {
 	err = orderSvc.Initialize(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize order service: %w", err)
+	}
+
+	err = metaSvc.Initialize(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize meta service: %w", err)
 	}
 
 	go addressSvc.Start()
